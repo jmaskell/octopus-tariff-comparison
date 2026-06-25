@@ -34,3 +34,22 @@ ACCOUNT = {
         }
     ],
 }
+
+PRODUCTS_LIST = {
+    "count": 1,
+    "next": None,
+    "results": [
+        {"code": "SILVER-26-06-01", "display_name": "Octopus Tracker",
+         "is_tracker": True, "brand": "OCTOPUS_ENERGY"},
+    ],
+}
+
+PRODUCT_DETAIL = {
+    "code": "SILVER-26-06-01",
+    "single_register_electricity_tariffs": {
+        "_C": {"direct_debit_monthly": {"code": "E-1R-SILVER-26-06-01-C"}},
+    },
+    "single_register_gas_tariffs": {
+        "_C": {"direct_debit_monthly": {"code": "G-1R-SILVER-26-06-01-C"}},
+    },
+}

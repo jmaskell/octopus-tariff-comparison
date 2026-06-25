@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -7,7 +8,7 @@ from octopus_compare.client import ApiError
 from octopus_compare.tracker import (
     discover_chain, _next_code, TrackerVersion,
     tracker_versions_for_window, latest_tracker_version,
-    resolve_flexible, FlexibleTariff)
+    resolve_flexible, FlexibleTariff, tracker_resolvers)
 from tests.fixtures.api_samples import TRACKER_PRODUCTS
 
 
@@ -95,10 +96,6 @@ def test_resolve_flexible_picks_newest_non_tracker():
     ])
     flex = resolve_flexible(WindowClient(), meter)
     assert flex == FlexibleTariff(product_code="VAR-22-11-01", tariff_code="E-1R-VAR-22-11-01-C")
-
-
-from decimal import Decimal
-from octopus_compare.tracker import tracker_resolvers
 
 
 class TrackerRateClient:

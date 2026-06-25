@@ -443,8 +443,11 @@ def test_flexible_references_within_tolerance():
     # reproduced exactly; assert within 5p of the printed total.
     from decimal import Decimal
     for label, kwh, rate, sc_rate, ndays, energy, total in bills.FLEXIBLE_REFERENCES:
-        days = [date(2026, 4, 1 + i) for i in range(ndays)]
-        daily = {days[0]: kwh}  # single bucket; rate is flat for flexible
+        # May has 31 days, so every reference ndays (8/30/31) yields valid dates.
+        days = [date(2026, 5, 1 + i) for i in range(ndays)]
+        # Energy in a single bucket (flat rate); zero on the other days so the
+        # standing charge still counts all `ndays` days.
+        daily = {d: (kwh if d == days[0] else Decimal(0)) for d in days}
         cost = supply_cost(daily, lambda d: rate, lambda d: sc_rate)
         assert abs(cost.total_pounds - total) <= Decimal("0.05"), label
 ```

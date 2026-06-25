@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from octopus_compare.rates import build_lookup
+from octopus_compare.rates import build_lookup, VersionedLookup, RateLookup, _Window
 from tests.fixtures.api_samples import TRACKER_ELEC_RATES, FLEX_ELEC_RATES
 
 
@@ -23,3 +23,21 @@ def test_missing_rate_raises():
     lookup = build_lookup(TRACKER_ELEC_RATES["results"])
     with pytest.raises(KeyError):
         lookup.rate_for(date(2026, 3, 10))
+
+
+def _flat_lookup(value):
+    return RateLookup([_Window(date.min, date.max, Decimal(value))])
+
+
+def test_versioned_lookup_picks_by_date():
+    sep = (date(2025, 9, 2), date(2026, 4, 1), _flat_lookup("18.00"))
+    apr = (date(2026, 4, 1), None, _flat_lookup("20.00"))
+    vl = VersionedLookup([apr, sep])  # unordered on purpose
+    assert vl.rate_for(date(2026, 3, 15)) == Decimal("18.00")
+    assert vl.rate_for(date(2026, 4, 15)) == Decimal("20.00")
+
+
+def test_versioned_lookup_uncovered_raises():
+    vl = VersionedLookup([(date(2026, 4, 1), None, _flat_lookup("20.00"))])
+    with pytest.raises(KeyError):
+        vl.rate_for(date(2026, 3, 1))

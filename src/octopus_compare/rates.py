@@ -62,3 +62,17 @@ def fetch_standing_charges(client, supply, product_code, tariff_code, period_fro
         path, {"period_from": _iso(period_from), "period_to": _iso(period_to)}
     )
     return build_lookup(results)
+
+
+class VersionedLookup:
+    """Pick, per day, the RateLookup of the version whose availability window
+    covers that day, then delegate. Used for the multi-version Tracker series."""
+
+    def __init__(self, entries: list[tuple[date, date | None, RateLookup]]):
+        self._entries = sorted(entries, key=lambda e: e[0])
+
+    def rate_for(self, day: date) -> Decimal:
+        for start, end, lookup in self._entries:
+            if start <= day < (end or date.max):
+                return lookup.rate_for(day)
+        raise KeyError(f"No Tracker version covering {day}")

@@ -53,3 +53,28 @@ PRODUCT_DETAIL = {
         "_C": {"direct_debit_monthly": {"code": "G-1R-SILVER-26-06-01-C"}},
     },
 }
+
+# Tracker daily rates (one per local day); exc-VAT pence.
+TRACKER_ELEC_RATES = {
+    "results": [
+        {"value_exc_vat": 18.78, "value_inc_vat": 19.719,
+         "valid_from": "2026-03-01T00:00:00Z", "valid_to": "2026-03-02T00:00:00Z"},
+        {"value_exc_vat": 19.81, "value_inc_vat": 20.80,
+         "valid_from": "2026-03-02T00:00:00Z", "valid_to": "2026-03-03T00:00:00Z"},
+    ]
+}
+
+# Flexible: single open-ended rate.
+FLEX_ELEC_RATES = {
+    "results": [
+        {"value_exc_vat": 23.71, "value_inc_vat": 24.8955,
+         "valid_from": "2026-04-01T00:00:00Z", "valid_to": None},
+    ]
+}
+
+FLEX_ELEC_STANDING = {
+    "results": [
+        {"value_exc_vat": 42.18, "value_inc_vat": 44.289,
+         "valid_from": "2026-04-01T00:00:00Z", "valid_to": None},
+    ]
+}

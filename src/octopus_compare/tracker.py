@@ -87,3 +87,43 @@ def discover_chain(client, seed_product: str) -> list[TrackerVersion]:
             break
         code = _next_code(code, version.available_to)
     return versions
+
+
+def _tracker_anchors(client, meter_point) -> list[str]:
+    """Distinct Tracker product codes in the meter's agreement history, newest-first."""
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for agreement in sorted(
+        meter_point.agreements, key=lambda a: a.valid_from or date.min, reverse=True
+    ):
+        product = product_code_from_tariff(agreement.tariff_code)
+        if product in seen:
+            continue
+        seen.add(product)
+        if client.get(f"products/{product}/").get("is_tracker"):
+            anchors.append(product)
+    return anchors
+
+
+def tracker_versions_for_window(
+    client, meter_point, period_from: date, period_to: date
+) -> list[TrackerVersion]:
+    anchors = _tracker_anchors(client, meter_point)
+    if not anchors:
+        raise ValueError("No Tracker tariff found in this account's agreement history")
+    by_code = {v.product_code: v for v in discover_chain(client, anchors[0])}
+    for code in anchors[1:]:
+        if code not in by_code:
+            by_code[code] = _version_from_detail(code, client.get(f"products/{code}/"))
+    versions = sorted(by_code.values(), key=lambda v: v.available_from)
+    return [
+        v for v in versions
+        if v.available_from < period_to and (v.available_to or date.max) > period_from
+    ]
+
+
+def latest_tracker_version(versions: list[TrackerVersion]) -> TrackerVersion:
+    for version in versions:
+        if version.available_to is None:
+            return version
+    return max(versions, key=lambda v: v.available_from)

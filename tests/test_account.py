@@ -5,6 +5,8 @@ from octopus_compare.account import (
     agreements_in_window,
     product_code_from_tariff,
     Agreement,
+    region_letter,
+    build_tariff_code,
 )
 from tests.fixtures.api_samples import ACCOUNT
 
@@ -33,3 +35,13 @@ def test_agreements_in_window_overlap():
                                     date(2026, 3, 1), date(2026, 4, 1))
     assert {a.tariff_code for a in spanning} == {
         "E-1R-SILVER-24-12-31-C", "E-1R-VAR-22-11-01-C"}
+
+
+def test_region_letter():
+    assert region_letter("E-1R-SILVER-24-12-31-C") == "C"
+    assert region_letter("G-1R-VAR-22-11-01-B") == "B"
+
+
+def test_build_tariff_code():
+    assert build_tariff_code("electricity", "SILVER-26-04-01", "C") == "E-1R-SILVER-26-04-01-C"
+    assert build_tariff_code("gas", "SILVER-26-04-01", "C") == "G-1R-SILVER-26-04-01-C"

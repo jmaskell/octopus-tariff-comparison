@@ -51,3 +51,25 @@ def test_flexible_references_within_tolerance():
         daily = {d: (kwh if d == days[0] else Decimal(0)) for d in days}
         cost = supply_cost(daily, lambda d: rate, lambda d: sc_rate)
         assert abs(cost.total_pounds - total) <= Decimal("0.05"), label
+
+
+from octopus_compare.costing import sum_supply_costs, SupplyCost
+from decimal import Decimal as D
+
+
+def test_sum_supply_costs_adds_components():
+    a = SupplyCost(D("10"), D("1.00"), D("0.50"), D("1.50"), D("0.08"), D("1.58"))
+    b = SupplyCost(D("20"), D("2.00"), D("0.50"), D("2.50"), D("0.13"), D("2.63"))
+    total = sum_supply_costs([a, b])
+    assert total.consumption_kwh == D("30")
+    assert total.energy_pounds == D("3.00")
+    assert total.standing_pounds == D("1.00")
+    assert total.subtotal_pounds == D("4.00")
+    assert total.vat_pounds == D("0.21")
+    assert total.total_pounds == D("4.21")
+
+
+def test_sum_supply_costs_empty_is_zero():
+    total = sum_supply_costs([])
+    assert total.total_pounds == D("0")
+    assert total.consumption_kwh == D("0")

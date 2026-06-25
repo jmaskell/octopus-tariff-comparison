@@ -70,6 +70,7 @@ tests/
 **Files:**
 - Create: `pyproject.toml`
 - Create: `src/octopus_compare/__init__.py`
+- Create: `tests/__init__.py` (empty — makes `tests` an importable package so later `from tests.fixtures import …` works)
 - Test: `tests/test_smoke.py`
 
 **Interfaces:**
@@ -114,25 +115,37 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 ```
 
-- [ ] **Step 4: Create `src/octopus_compare/__init__.py`**
+- [ ] **Step 4: Create `src/octopus_compare/__init__.py` and `tests/__init__.py`**
 
+`src/octopus_compare/__init__.py`:
 ```python
 __version__ = "0.1.0"
 ```
+
+`tests/__init__.py`: empty file.
 
 - [ ] **Step 5: Install and run tests**
 
 Run: `python -m pip install -e ".[dev]" && python -m pytest tests/test_smoke.py -v`
 Expected: PASS.
 
+If `pip install` fails with an "externally-managed-environment" error (PEP 668),
+create and use a virtualenv instead, and use it for all subsequent test runs:
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m pytest tests/test_smoke.py -v
+```
+(`.venv/` is already covered by `.gitignore`.)
+
 - [ ] **Step 6: Commit**
 
 ```bash
-git add pyproject.toml src/octopus_compare/__init__.py tests/test_smoke.py
+git add pyproject.toml src/octopus_compare/__init__.py tests/__init__.py tests/test_smoke.py
 git commit -m "feat: project scaffold for octopus-compare"
 ```
 

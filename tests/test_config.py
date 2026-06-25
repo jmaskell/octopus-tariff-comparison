@@ -35,3 +35,16 @@ def test_from_to_override():
 def test_missing_credentials_raises():
     with pytest.raises(ConfigError):
         load_config([], {}, TODAY)
+
+
+def test_tracker_product_and_region_default_none():
+    cfg = load_config([], ENV, TODAY)
+    assert cfg.tracker_product is None
+    assert cfg.region is None
+
+
+def test_tracker_product_and_region_flags():
+    cfg = load_config(
+        ["--tracker-product", "SILVER-26-04-01", "--region", "C"], ENV, TODAY)
+    assert cfg.tracker_product == "SILVER-26-04-01"
+    assert cfg.region == "C"

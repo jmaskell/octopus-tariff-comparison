@@ -56,3 +56,28 @@ def supply_cost(
         vat_pounds=pounds(vat_p),
         total_pounds=pounds(total_p),
     )
+
+
+def sum_supply_costs(costs: list[SupplyCost]) -> SupplyCost:
+    z = Decimal(0)
+
+    def s(attr: str) -> Decimal:
+        return sum((getattr(c, attr) for c in costs), z)
+
+    return SupplyCost(
+        consumption_kwh=s("consumption_kwh"),
+        energy_pounds=s("energy_pounds"),
+        standing_pounds=s("standing_pounds"),
+        subtotal_pounds=s("subtotal_pounds"),
+        vat_pounds=s("vat_pounds"),
+        total_pounds=s("total_pounds"),
+    )
+
+
+def month_slices(
+    daily_kwh: dict[date, Decimal],
+) -> list[tuple[date, dict[date, Decimal]]]:
+    buckets: dict[date, dict[date, Decimal]] = {}
+    for day, kwh in daily_kwh.items():
+        buckets.setdefault(day.replace(day=1), {})[day] = kwh
+    return [(month, buckets[month]) for month in sorted(buckets)]

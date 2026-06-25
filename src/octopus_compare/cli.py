@@ -6,7 +6,7 @@ from dotenv import dotenv_values
 
 from octopus_compare.client import OctopusClient, ApiError
 from octopus_compare.config import load_config, ConfigError
-from octopus_compare.pipeline import run_comparison
+from octopus_compare.pipeline import run_comparison, PricingError
 from octopus_compare.report import format_text, format_json
 
 
@@ -37,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
         result = run_comparison(client, cfg)
     except ApiError as e:
         print(f"Octopus API error: {e}", file=sys.stderr)
+        return 3
+    except (PricingError, ValueError) as e:
+        print(str(e), file=sys.stderr)
         return 3
 
     if cfg.verbose:

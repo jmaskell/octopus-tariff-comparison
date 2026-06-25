@@ -77,3 +77,39 @@ ELEC_CONSUMPTION_KWH = {
          "interval_end": "2026-03-02T00:00:00Z"},
     ]
 }
+
+# Tracker product details, forming a chain via available_to -> next available_from.
+TRACKER_PRODUCTS = {
+    "SILVER-25-04-15": {
+        "code": "SILVER-25-04-15", "full_name": "Octopus Tracker April 2025 v2",
+        "is_tracker": True,
+        "available_from": "2025-04-15T00:00:00+01:00",
+        "available_to": "2025-09-02T00:00:00+01:00",
+    },
+    "SILVER-25-09-02": {
+        "code": "SILVER-25-09-02", "full_name": "Octopus Tracker September 2025 v1",
+        "is_tracker": True,
+        "available_from": "2025-09-02T00:00:00+01:00",
+        "available_to": "2026-04-01T00:00:00+01:00",
+    },
+    "SILVER-26-04-01": {
+        "code": "SILVER-26-04-01", "full_name": "Octopus Tracker April 2026 v1",
+        "is_tracker": True,
+        "available_from": "2026-04-01T00:00:00+01:00",
+        "available_to": None,
+    },
+}
+
+
+# Two-month consumption spanning a month boundary (Mar 30, 31 -> Apr 1).
+def _rows(values):
+    out = []
+    for day, v in values.items():
+        out.append({"consumption": v,
+                    "interval_start": f"{day}T00:00:00Z",
+                    "interval_end": f"{day}T23:30:00Z"})
+    return out
+
+
+ELEC_TWO_MONTH = _rows({"2026-03-30": 9.0, "2026-03-31": 9.0, "2026-04-01": 9.0})
+GAS_TWO_MONTH = _rows({"2026-03-30": 30.0, "2026-03-31": 30.0, "2026-04-01": 30.0})

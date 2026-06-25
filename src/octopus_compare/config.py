@@ -18,6 +18,8 @@ class Config:
     gas_calorific_value: Decimal
     gas_units: str
     verbose: bool
+    tracker_product: str | None = None
+    region: str | None = None
 
 
 def _parse_date(value: str) -> date:
@@ -33,6 +35,8 @@ def load_config(argv: list[str], env: dict[str, str], today: date) -> Config:
     parser.add_argument("--gas-calorific-value", type=Decimal, default=Decimal("39.5"))
     parser.add_argument("--gas-units", choices=["auto", "m3", "kwh"], default="auto")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--tracker-product", dest="tracker_product", default=None)
+    parser.add_argument("--region", dest="region", default=None)
     args = parser.parse_args(argv)
 
     api_key = env.get("OCTOPUS_API_KEY", "").strip()
@@ -54,4 +58,6 @@ def load_config(argv: list[str], env: dict[str, str], today: date) -> Config:
         gas_calorific_value=args.gas_calorific_value,
         gas_units=args.gas_units,
         verbose=args.verbose,
+        tracker_product=args.tracker_product,
+        region=args.region,
     )

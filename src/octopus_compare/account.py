@@ -67,3 +67,12 @@ def agreements_in_window(
 
 def product_code_from_tariff(tariff_code: str) -> str:
     return tariff_code[5:-2]
+
+
+def region_letter(tariff_code: str) -> str:
+    return tariff_code[-1]
+
+
+def build_tariff_code(supply: str, product_code: str, region: str) -> str:
+    prefix = "E" if supply == "electricity" else "G"
+    return f"{prefix}-1R-{product_code}-{region}"

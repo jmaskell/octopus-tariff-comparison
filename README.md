@@ -1,7 +1,10 @@
 # octopus-compare
 
-Compare your actual Flexible Octopus spend against what Octopus Tracker would
-have cost (electricity + gas), and get a switch recommendation.
+Compare what Octopus **Flexible** vs **Tracker** would cost on your real usage,
+month by month, and get a switch recommendation. Both columns are pure what-ifs
+(your consumption × each tariff's published rates) — neither is your actual bill.
+The Tracker side uses the version current each month; the latest version
+(today's switch-now rate) is named in the report header.
 
 ## Setup
 
@@ -12,9 +15,10 @@ Get your API key: https://octopus.energy/dashboard/new/accounts/personal-details
 
 ## Usage
 
-    octopus-compare                       # last 3 months
-    octopus-compare --months 1
-    octopus-compare --from 2026-04-01 --to 2026-04-30
+    octopus-compare                       # last 3 months, Flexible vs latest Tracker
+    octopus-compare --from 2026-01-01 --to 2026-05-31   # backtest across your Tracker months
+    octopus-compare --tracker-product SILVER-25-09-02   # pin a specific Tracker version
+    octopus-compare --region C            # override the auto-derived region
     octopus-compare --format json
 
 ## Tests

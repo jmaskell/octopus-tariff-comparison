@@ -72,3 +72,12 @@ def sum_supply_costs(costs: list[SupplyCost]) -> SupplyCost:
         vat_pounds=s("vat_pounds"),
         total_pounds=s("total_pounds"),
     )
+
+
+def month_slices(
+    daily_kwh: dict[date, Decimal],
+) -> list[tuple[date, dict[date, Decimal]]]:
+    buckets: dict[date, dict[date, Decimal]] = {}
+    for day, kwh in daily_kwh.items():
+        buckets.setdefault(day.replace(day=1), {})[day] = kwh
+    return [(month, buckets[month]) for month in sorted(buckets)]

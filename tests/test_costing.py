@@ -73,3 +73,22 @@ def test_sum_supply_costs_empty_is_zero():
     total = sum_supply_costs([])
     assert total.total_pounds == D("0")
     assert total.consumption_kwh == D("0")
+
+
+from octopus_compare.costing import month_slices
+
+
+def test_month_slices_groups_by_calendar_month():
+    daily = {
+        date(2026, 3, 30): D("9"),
+        date(2026, 3, 31): D("8"),
+        date(2026, 4, 1): D("7"),
+    }
+    slices = month_slices(daily)
+    assert [m for m, _ in slices] == [date(2026, 3, 1), date(2026, 4, 1)]
+    assert slices[0][1] == {date(2026, 3, 30): D("9"), date(2026, 3, 31): D("8")}
+    assert slices[1][1] == {date(2026, 4, 1): D("7")}
+
+
+def test_month_slices_empty():
+    assert month_slices({}) == []

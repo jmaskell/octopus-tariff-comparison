@@ -1,4 +1,4 @@
-# Fine-Grained Tariff Comparison + Latest Tracker — Design
+# Fine-Grained Tariff Comparison + Backtest + Latest Tracker — Design
 
 **Date:** 2026-06-25
 **Status:** Approved (design); pending implementation plan
@@ -7,41 +7,54 @@
 ## 1. Purpose
 
 The existing `octopus-compare` tool prints a single per-supply **total** for the
-household's actual tariff vs Octopus Tracker, plus a switch recommendation. Two
+household's actual tariff vs Octopus Tracker, plus a switch recommendation. Three
 gaps make it hard to actually *decide* whether to switch:
 
 1. **Not enough detail.** It only shows the per-supply total, even though the
-   cost engine already computes consumption, energy, standing charge, and VAT
-   for each tariff. You can't see *where* the difference comes from or *whether*
-   the saving is consistent over time.
-2. **Wrong Tracker version.** It compares against the newest Tracker the account
-   was historically *on*, not the latest **published** version. Tracker is
-   versioned and new sign-ups get the current version, so the historical one is
-   not necessarily the rate you'd actually pay if you switched today.
+   cost engine already computes consumption, energy, standing charge, and VAT for
+   each tariff. You can't see *where* the difference comes from.
+2. **No month-by-month backtest.** It shows one period total, not how the two
+   tariffs compared *each month* — including the months you were actually on
+   Tracker, where you'd want to see what Flexible would have cost instead.
+3. **Wrong Tracker version for "switch now".** It compares against the newest
+   Tracker the account was historically *on*, not the latest **published**
+   version that a new sign-up would actually get.
 
-This enhancement adds a fine-grained, per-tariff cost breakdown and makes the
-comparison target the **latest published Tracker version**, so the report answers
-"what would I pay, broken down, if I switched now?"
+This enhancement turns the report into a **month-by-month Flexible-vs-Tracker
+backtest** with a per-supply component breakdown, costed on your real usage, and
+makes the "switch now" reference the **latest published Tracker version**.
 
 ## 2. Decisions (from brainstorming)
 
+- **Two consistent columns: Flexible vs Tracker**, each costed on your actual
+  consumption. (Not "what you actually paid" — you explicitly want a clean
+  tariff-vs-tariff comparison to weigh which is cheaper.)
+  - **Flexible** = your Flexible Octopus rates by date, reconstructed for every
+    month in the window (Flexible is a listed product, so historical rates are
+    available even for months you weren't on it).
+  - **Tracker** = the Tracker version that was the **current sign-up product**
+    each day (chain-partitioned over time). Recent months therefore use the
+    latest version (`SILVER-26-04-01`); historical months use the version current
+    then. This is independent of which version you were personally on.
+- **A "You were on" marker** per month (Tracker / Flexible / mixed), derived from
+  your agreements — context only; it does not affect pricing.
 - **Detail level:** component breakdown **plus** monthly breakdown.
   - Per supply: consumption / energy (excl VAT) / standing charge / VAT / total,
-    for **Actual** and **Tracker** side by side, with the total delta.
+    for Flexible and Tracker, with the total delta.
   - A combined (electricity + gas) **monthly** table: per calendar month, the
-    total on each tariff and the delta, then a grand total.
-- **Tracker target:** **actively find the latest** published version (today that
-  is `SILVER-26-04-01`, "Octopus Tracker April 2026 v1"), not the one from the
-  account's history. Overridable with `--tracker-product CODE`. The resolved
-  code, display name, and valid-from date are printed in the report.
+    total on each tariff, the delta, and the "You were on" marker; then a grand
+    total.
+- **Latest Tracker for "switch now":** the version with `available_to: null`
+  (today `SILVER-26-04-01`) is identified and named in the header. Overridable
+  with `--tracker-product CODE`.
 - **Engine approach:** **slice & reuse** — call the existing penny-exact
-  `supply_cost()` once per calendar month; the engine math is untouched. VAT is
-  therefore rounded per month, which matches how Octopus actually bills. The
-  headline total is the sum of the monthly totals.
+  `supply_cost()` once per calendar month, per supply, per tariff. Engine math
+  untouched; VAT rounds per month (matches Octopus's monthly billing); the
+  headline total is the sum of monthly totals.
 - **Region:** auto-derived from the account's own tariff codes (no postcode
-  needed); reused when building Tracker tariff codes so regional standing charges
-  and unit rates are correct. Printed for transparency; optional `--region`
-  override as a safety valve.
+  needed) and reused when building both Flexible and Tracker tariff codes, so
+  regional standing charges and unit rates are correct. Printed for transparency;
+  optional `--region` override as a safety valve.
 
 ## 3. Grounding facts (verified against the live public API, 2026-06-25)
 
@@ -57,198 +70,220 @@ is `SILVER-YY-MM-DD` of its start date:
 | September 2025 v1 | `SILVER-25-09-02` | 2025-09-02 | 2026-04-01 |
 | **April 2026 v1 (current)** | `SILVER-26-04-01` | 2026-04-01 | **null** |
 
-The version with `available_to: null` is the one currently open to new sign-ups —
-i.e. the rate you'd actually pay if you switched today. This is the target.
+The version with `available_to: null` is open to new sign-ups — the "switch now"
+reference. The chain also **partitions time**: every day maps to exactly one
+"current" Tracker version, which is what the Tracker column uses per day.
 
-Tariff codes embed the region as the trailing letter, e.g.
-`E-1R-SILVER-26-04-01-B` (electricity, region B). A Tracker tariff keeps
-publishing daily unit rates beyond its sign-up window, so rates for any of these
-codes can be fetched for a recent comparison period.
+A Tracker version publishes daily unit rates for (at least) its active window, so
+the Tracker column can be costed from these per-version rate series. **Flexible
+Octopus is a listed product** whose unit rates / standing charges are published
+historically per region, so the Flexible column can be reconstructed for any
+past month. Tariff codes embed region as the trailing letter, e.g.
+`E-1R-SILVER-26-04-01-B` (electricity, region B).
 
 ## 4. Output specification
 
-Plain-text report (illustrative numbers):
+Plain-text report over a window that spans both eras (illustrative numbers):
 
 ```
-Octopus Tariff Comparison · 1 Apr – 25 Jun 2026 (86 days)
-Comparing your actual tariff against the latest Octopus Tracker:
-  SILVER-26-04-01 · "Octopus Tracker April 2026 v1" · current since 2026-04-01
-  Region B
+Octopus Tariff Comparison · 1 Jan – 31 May 2026 (151 days)
+Flexible vs Octopus Tracker, costed on your actual usage · Region B
+  Switch-now Tracker: SILVER-26-04-01 · "Octopus Tracker April 2026 v1" · current since 2026-04-01
+  Earlier months use the Tracker version current that month.
 
-Electricity                    Actual      Tracker
-  consumption                  742 kWh     742 kWh
-  energy (excl VAT)            £166.30     £138.90
-  standing charge               £36.27      £31.40
-  VAT (5%)                      £10.13       £8.52
+Electricity                    Flexible    Tracker
+  consumption                1,520 kWh   1,520 kWh
+  energy (excl VAT)            £340.10     £305.40
+  standing charge               £63.20      £57.80
+  VAT (5%)                      £20.17      £18.16
   ────────────────────────────────────────────────
-  total                        £212.70     £178.82     −£33.88
+  total                        £423.47     £381.36     −£42.11
 
-Gas                            Actual      Tracker
-  consumption                3,180 kWh   3,180 kWh
-  energy (excl VAT)            £179.04     £151.20
-  standing charge               £24.14      £22.80
-  VAT (5%)                      £10.16       £8.70
+Gas                            Flexible    Tracker
+  consumption                6,900 kWh   6,900 kWh
+  energy (excl VAT)            £388.70     £342.10
+  standing charge               £43.60      £41.20
+  VAT (5%)                      £21.62      £19.17
   ────────────────────────────────────────────────
-  total                        £213.34     £182.70     −£30.64
+  total                        £453.92     £402.47     −£51.45
 
-By month (elec + gas)          Actual      Tracker      Delta
-  Apr 2026                     £158.40     £135.10     −£23.30
-  May 2026                     £150.10     £128.40     −£21.70
-  Jun 2026 (25 days)           £117.54      £98.02     −£19.52
-  ──────────────────────────────────────────────────────────
-  Total                        £426.04     £361.52     −£64.52
+By month (elec + gas)      Flexible    Tracker      Delta    You were on
+  Jan 2026                  £210.40     £194.00     −£16.40    Tracker
+  Feb 2026                  £198.20     £180.20     −£18.00    Tracker
+  Mar 2026                  £190.10     £175.10     −£15.00    Tracker → Flexible
+  Apr 2026                  £158.40     £135.10     −£23.30    Flexible
+  May 2026                  £120.29     £ 99.43     −£20.86    Flexible
+  ──────────────────────────────────────────────────────────────────────
+  Total                     £877.39     £783.83     −£93.56
 
-→ SWITCH BACK to Tracker — it would have cost 15.1% (£64.52) less over this
-  period. Figures are API-derived estimates incl. VAT, not your exact bill;
-  Tracker prices change daily, so past savings don't guarantee future ones.
+→ SWITCH BACK to Tracker — over this period it would have cost 10.7% (£93.56)
+  less than Flexible. Figures are API-derived estimates incl. VAT, not your exact
+  bill; Tracker prices change daily, so past savings don't guarantee future ones.
 ```
 
 Rules:
 
-- **Columns are "Actual" vs "Tracker"** (not "Flexible"). The Actual side is
-  computed per-day against the account's real agreements, so a window spanning
-  the Tracker→Flexible switch is priced correctly day by day.
-- **Header** prints the resolved Tracker `code · display_name · current since
-  <available_from>` and the region letter, so the comparison target and regional
-  pricing are always visible.
-- **Component blocks** (Electricity, then Gas): rows for consumption, energy
-  (excl VAT), standing charge, VAT (5%), and total, for both tariffs, with the
-  delta on the total row.
-- **Monthly table** combines electricity + gas per calendar month (the per-supply
-  split is already covered by the component blocks). Partial months at the window
-  edges show a day count, e.g. `Jun 2026 (25 days)`.
-- **Recommendation** logic is unchanged (threshold on the combined grand-total
-  delta: SWITCH BACK / MARGINAL / STAY), followed by the existing caveat line.
+- **Columns are "Flexible" vs "Tracker"** — two consistent counterfactual tariffs
+  on the same consumption. The "You were on" marker shows which you actually had
+  (so a Tracker-month row reads "Flexible would have cost £X more/less").
+- **Header** prints the region, the switch-now Tracker
+  `code · display_name · current since <available_from>`, and a note that earlier
+  months use the then-current version.
+- **Component blocks** (Electricity, then Gas): consumption / energy (excl VAT) /
+  standing charge / VAT / total, for both tariffs, with the delta on the total.
+  Over a multi-version window the Tracker side is the sum across versions.
+- **Monthly table** combines electricity + gas per calendar month, with delta and
+  the "You were on" marker. Partial months at the window edges show a day count,
+  e.g. `May 2026 (24 days)`.
+- **Delta sign:** Tracker − Flexible (negative = Tracker cheaper), consistent with
+  the headline.
+- **Recommendation** is computed on the combined grand-total delta over the window
+  (SWITCH BACK / MARGINAL / STAY) followed by the existing caveat. For a pure
+  "switch now" read, the recent rows (latest Tracker) are the relevant ones; the
+  header names that version.
 - **`--format json`** carries the same structure: per-supply component figures,
-  the monthly rows, the tracker meta (code, display name, available_from), and
-  the region.
+  the monthly rows (each with Flexible total, Tracker total, delta, days, and the
+  on-marker), the switch-now tracker meta, and the region.
 
-## 5. Tracker discovery + region handling
+## 5. Rate resolution
 
-**Region (per supply).** Extract the trailing region letter from the account's
-own agreement tariff codes — electricity and gas independently. A postcode→GSP
-lookup is *not* used: it is only needed when there is no account, and is ambiguous
-at region boundaries. The account's tariff codes carry the exact region Octopus
-bills, which is authoritative. `--region X` overrides if ever needed.
+All four resolvers are **per-day** and **region-correct** (each tariff code built
+as `{E|G}-1R-{product}-{region}` using the account's own region letter, per
+supply).
 
-**Build a Tracker tariff code** from supply + product + region:
-`E-1R-{product}-{region}` for electricity, `G-1R-{product}-{region}` for gas.
+**Flexible (by date).** Resolve the household's Flexible product/tariff code from
+its Flexible agreement(s). Fetch unit rates + standing charges across the window;
+for months outside any Flexible agreement, use the Flexible product current that
+day (Flexible is listed, so this is resolvable). Build a per-day Flexible rate +
+standing-charge lookup. Price-cap changes are time-windowed within the rate
+series and matched per day.
 
-**Discover the latest version (chain-walk):**
+**Tracker (current version, by date).** Gather the set of Tracker versions whose
+`[available_from, available_to)` intersects the window:
+- older anchors from the account's Tracker agreement history (the codes the
+  account was on),
+- the forward **chain-walk** to the latest (`available_to: null`): from a seed
+  code, `GET /products/{code}/`; if `available_to` is null it's the latest, else
+  next code = `{codename}-{YY-MM-DD of available_to}`, repeat.
 
-1. **Seed** — find the newest Tracker product in the meter's agreement history
-   (the existing history walk), giving a starting `SILVER-YY-MM-DD` code and the
-   codename prefix. If `--tracker-product` is set, use that as the target
-   directly and skip the walk.
-2. **Walk** — `GET /products/{code}/`; read `available_to`.
-   - `null` → this is the latest; stop.
-   - otherwise → next code = `{codename}-{YY-MM-DD of available_to}`; repeat.
-3. **Result** — `TrackerTariff(product_code, tariff_code, display_name,
-   available_from)`, with the region-correct tariff code built per supply.
-4. **Fallback** — if a constructed next code 404s, stop and return the last good
-   version (best-effort), noting it in `--verbose`.
-
-Discovery is seeded once (per account) and reused for both supplies; only the
-final product's detail is needed for the printed meta.
+Fetch each gathered version's unit rates + standing charges over (its slice of)
+the window, then build a per-day lookup that picks, for each day, the version
+whose `[available_from, available_to)` covers it. The latest version (for the
+header) is the one with `available_to: null`. `--tracker-product CODE`
+short-circuits version selection to a single fixed code. A 404 on a constructed
+code stops the walk (best-effort), noted in `--verbose`; a window day with no
+resolvable Tracker version is reported as a gap rather than mis-priced.
 
 ## 6. Cost engine: slice & reuse
 
 The penny-exact engine (`supply_cost`, `daily_energy_pence`, `standing_pence`,
-VAT) is **not modified**. Instead:
+VAT) is **not modified**. `pipeline.py`:
 
-- `pipeline.py` slices the daily-kWh series into calendar-month buckets and calls
-  the existing `supply_cost()` once per (month, supply, tariff), using the same
-  per-day actual resolvers and the Tracker resolvers.
-- A new pure helper `sum_supply_costs(list[SupplyCost]) -> SupplyCost` aggregates
-  monthly results component-wise (consumption, energy, standing, subtotal, VAT,
-  total) to give the per-supply period figures and the combined grand total.
-- VAT is therefore applied per month and summed — consistent across the headline,
-  the component blocks, and the monthly table, and faithful to Octopus's monthly
-  billing. The combined multi-month headline may differ from the old
-  whole-period-VAT figure by a penny or two; this is acceptable and more correct.
+- slices the daily-kWh series into calendar-month buckets, and
+- calls `supply_cost()` once per (month, supply, tariff), passing the Flexible or
+  Tracker per-day resolvers from §5.
 
-**Eval safety:** the Tier-1 and Tier-2 bill evals all cover single-month windows,
-which produce exactly one month bucket — identical to the whole-period
-computation — so they continue to pass unchanged. No eval pins a multi-month
-combined headline to the penny.
+A new pure helper `sum_supply_costs(list[SupplyCost]) -> SupplyCost` aggregates
+monthly results component-wise to give the per-supply period figures and the
+combined grand total. VAT is applied per month and summed — consistent across
+headline, component blocks, and the monthly table.
+
+**Eval safety:** the existing Tier-1/Tier-2 bill evals cover single-month windows
+on the household's *actual* tariff. They are re-expressed against the matching
+column (Flexible or Tracker-current-version) for those single months, which —
+being one month bucket — equals the whole-period computation, so they continue to
+pin the engine to the penny.
 
 ## 7. Data model changes
 
-- `TrackerTariff` (in `tracker.py`) gains `display_name: str` and
-  `available_from: date` alongside `product_code` / `tariff_code`.
-- A `MonthlyRow` (or tuple) per calendar month: `month: date` (first of month),
-  `days: int`, `actual: SupplyCost`, `tracker: SupplyCost` — held per supply, and
-  combined (elec+gas) for the monthly table.
-- `ComparisonResult` (in `report.py`) is extended to carry, per supply: the
-  period `SupplyCost` for Actual and Tracker (from `sum_supply_costs`) and the
-  list of monthly rows; plus the resolved tracker meta and the region letter.
-  Existing `actual_total` / `tracker_total` / `delta` / `pct` / `recommend`
-  semantics are preserved (now derived from the aggregated totals).
+- `TrackerVersion` (new, in `tracker.py`): `product_code`, `display_name`,
+  `available_from: date`, `available_to: date | None`. The chain-walk returns the
+  ordered list; the `available_to is None` one is the "switch-now" latest.
+- `MonthlyRow`: `month: date` (first of month), `days: int`,
+  `flexible: SupplyCost`, `tracker: SupplyCost`, `on: str` (the marker) — held
+  per supply, and combined (elec+gas) for the monthly table.
+- `ComparisonResult` (in `report.py`): per supply, the period `SupplyCost` for
+  Flexible and Tracker (from `sum_supply_costs`) and the list of monthly rows;
+  plus the switch-now tracker meta and the region letter. `actual_total` /
+  `tracker_total` are renamed to `flexible_total` / `tracker_total`;
+  `delta` / `pct` / `recommend` semantics are preserved over those totals.
 
 ## 8. Module-level changes (summary)
 
-- **`account.py`** — `region_letter(tariff_code)`; `tracker_tariff_code(supply,
-  product, region)` helper.
-- **`tracker.py`** — refactor to seed-from-history → `latest_tracker()`
-  chain-walk → enriched `TrackerTariff`; honor `--tracker-product`; build
-  region-correct codes; 404 fallback.
+- **`account.py`** — `region_letter(tariff_code)`; `tariff_code(supply, product,
+  region)` builder; helper to classify each day's agreement (for the on-marker)
+  and to surface the Flexible product code.
+- **`tracker.py`** — chain-walk returning the ordered `TrackerVersion` list +
+  the latest; gather window-intersecting versions; build the per-day Tracker
+  rate/standing-charge resolver; honour `--tracker-product`; 404 fallback.
+- **`rates.py`** — build a per-day Flexible resolver and a per-day multi-version
+  Tracker resolver (compose existing `RateLookup`s; pick by date).
 - **`config.py` / `cli.py`** — add `--tracker-product CODE` and optional
   `--region X`; thread into `Config`.
 - **`costing.py`** — add `sum_supply_costs()` (pure aggregation); engine math
   untouched.
-- **`pipeline.py`** — month-slice the daily kWh; per-month `supply_cost()` per
-  supply per tariff; aggregate; assemble the enriched `ComparisonResult`.
-- **`report.py`** — new component blocks + monthly table + header (tracker meta,
-  region) in text; mirror the structure in JSON.
+- **`pipeline.py`** — month-slice; per-month `supply_cost()` per supply per
+  tariff using the §5 resolvers; aggregate; assemble the enriched result + the
+  per-month on-markers.
+- **`report.py`** — component blocks + monthly table (with delta + on-marker) +
+  header (region, switch-now tracker); mirror in JSON.
 
 ## 9. Testing & evaluation
 
-- **Discovery** — mocked client returning a product chain; assert the walk
-  returns the `available_to: null` version; assert next-code construction from an
-  `available_to` date; assert 404 mid-walk falls back to the last good version;
-  assert `--tracker-product` short-circuits the walk.
-- **Region** — `region_letter` extraction; `tracker_tariff_code` building for
-  electricity and gas.
+- **Discovery** — mocked product chain → chain-walk returns the ordered versions
+  and identifies the `available_to: null` latest; next-code construction from an
+  `available_to` date; 404 mid-walk falls back; `--tracker-product`
+  short-circuits.
+- **Per-day resolvers** — Tracker resolver picks the correct version per day
+  across a version boundary; Flexible resolver matches price-cap windows; region
+  letter is applied to both, per supply.
+- **Region** — `region_letter` extraction and tariff-code building (elec + gas).
 - **Aggregation** — `sum_supply_costs` is component-wise correct; a single-month
-  window yields a result identical to the whole-period computation (locks in
-  Tier-1/Tier-2 eval compatibility); a multi-month window's grand total equals
-  the sum of its monthly totals.
-- **Report** — text output contains the component rows, the monthly rows with
-  deltas, and the tracker code + region; JSON carries the same structure.
-- **Existing bill evals** — unchanged; must still pass to the penny.
-- **Tier-3 live (optional, env-gated)** — assert the resolved latest Tracker is
-  the current `available_to: null` version and that the region matches the
-  account's own tariff codes.
+  window equals the whole-period computation (locks Tier-1/Tier-2 compatibility);
+  a multi-month grand total equals the sum of monthly totals.
+- **On-marker** — months fully on Tracker / fully on Flexible / spanning the
+  switch are labelled correctly from agreements.
+- **Report** — text contains component rows, monthly rows with deltas and
+  on-markers, region, and the switch-now tracker code; JSON mirrors it.
+- **Existing bill evals** — re-expressed against the matching column for those
+  single-month windows; still pass to the penny.
+- **Tier-3 live (optional, env-gated)** — the resolved latest is the current
+  `available_to: null` version; region matches the account; the per-day Tracker
+  resolver reproduces known daily rates across a version boundary.
 
 ## 10. Edge cases & error handling
 
-- **Partial months** at the window edges → bucketed normally; day count shown.
+- **Partial months** at window edges → bucketed normally; day count shown.
+- **Month spanning a Tracker version boundary** → the per-day Tracker resolver
+  prices each day on its current version.
 - **Smart-meter lag** → report the actual covered date range (existing behaviour).
-- **Window spans the account's own tariff switch** → per-day actual resolvers
-  already price each day against the agreement active that day.
-- **No Tracker in history and no `--tracker-product`** → clear error: cannot
-  determine a Tracker version; pass `--tracker-product`.
+- **Window day with no resolvable Tracker version** (older than any gathered
+  anchor) → reported as a gap, not mis-priced.
+- **No Flexible agreement for early months** → use the Flexible product current
+  that day (listed product).
 - **`--tracker-product` code 404s** → clear error naming the bad code.
-- **Region mismatch / missing** → derive from any of the account's tariff codes;
-  `--region` override available.
+- **Region missing** → derive from any account tariff code; `--region` override.
 
 ## 11. Out of scope (YAGNI)
 
-- Comparing more than one Tracker version at once (override lets you inspect any
-  single version; the default is the latest).
+- A separate "what you actually paid" column (you want tariff-vs-tariff; the
+  on-marker gives the context).
+- Per-account historical Tracker-version selection (the Tracker column uses the
+  then-current product, by decision).
 - Daily line-item table (monthly is the chosen granularity).
 - Postcode→GSP lookup (the account already pins the region).
-- Forward price projection; web UI; tariffs beyond Actual vs latest Tracker.
+- Forward price projection; web UI; tariffs beyond Flexible vs Tracker.
 
 ## 12. Success criteria
 
-- Running `octopus-compare` prints, per supply, an Actual-vs-Tracker component
-  breakdown and a combined monthly table with deltas and a grand total, plus the
+- Running `octopus-compare` over a window that spans both eras prints, per supply,
+  a Flexible-vs-Tracker component breakdown, and a combined **monthly** table with
+  per-month deltas and a "You were on" marker, plus a grand total and a
   recommendation.
-- The header shows the resolved **latest** Tracker code/name/date (today
-  `SILVER-26-04-01`) and the region letter; `--tracker-product` and `--region`
-  override correctly.
+- The header shows the region and the switch-now **latest** Tracker
+  (today `SILVER-26-04-01`); earlier months are priced on the then-current
+  version; `--tracker-product` and `--region` override correctly.
 - A single-month window reproduces the existing penny-exact bill evals; the
   monthly rows sum to the grand total.
-- The tool degrades gracefully (clear messages) on discovery 404s, missing
-  Tracker history, and bad override codes.
+- The tool degrades gracefully (clear messages) on discovery 404s, version gaps,
+  missing Flexible/Tracker data, and bad override codes.

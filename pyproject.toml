@@ -1,0 +1,23 @@
+[project]
+name = "octopus-compare"
+version = "0.1.0"
+description = "Compare Flexible Octopus spend against Octopus Tracker."
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31", "python-dotenv>=1.0", "rich>=13.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+octopus-compare = "octopus_compare.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]

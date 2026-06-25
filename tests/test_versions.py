@@ -95,3 +95,35 @@ def test_resolve_flexible_picks_newest_non_tracker():
     ])
     flex = resolve_flexible(WindowClient(), meter)
     assert flex == FlexibleTariff(product_code="VAR-22-11-01", tariff_code="E-1R-VAR-22-11-01-C")
+
+
+from decimal import Decimal
+from octopus_compare.tracker import tracker_resolvers
+
+
+class TrackerRateClient:
+    """Different unit rate / standing charge per Tracker product code in the path."""
+
+    UNIT = {"SILVER-25-09-02": "18.00", "SILVER-26-04-01": "20.00"}
+    STAND = {"SILVER-25-09-02": "37.00", "SILVER-26-04-01": "38.00"}
+
+    def get_results(self, path, params=None):
+        product = path.split("/")[1]
+        if "standing-charges" in path:
+            return [{"value_exc_vat": float(self.STAND[product]),
+                     "valid_from": None, "valid_to": None}]
+        return [{"value_exc_vat": float(self.UNIT[product]),
+                 "valid_from": None, "valid_to": None}]
+
+
+def test_tracker_resolvers_pick_version_per_day():
+    versions = [
+        TrackerVersion("SILVER-25-09-02", "Sep 2025", date(2025, 9, 2), date(2026, 4, 1)),
+        TrackerVersion("SILVER-26-04-01", "Apr 2026", date(2026, 4, 1), None),
+    ]
+    rate_for, sc_for = tracker_resolvers(
+        TrackerRateClient(), "electricity", versions, "C", date(2026, 3, 1), date(2026, 5, 1))
+    assert rate_for(date(2026, 3, 15)) == Decimal("18.00")
+    assert rate_for(date(2026, 4, 15)) == Decimal("20.00")
+    assert sc_for(date(2026, 3, 15)) == Decimal("37.00")
+    assert sc_for(date(2026, 4, 15)) == Decimal("38.00")

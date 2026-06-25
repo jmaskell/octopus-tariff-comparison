@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from octopus_compare.account import MeterPoint, product_code_from_tariff
+from octopus_compare.account import MeterPoint, product_code_from_tariff, build_tariff_code
+from octopus_compare.rates import fetch_rates, fetch_standing_charges, VersionedLookup
 from octopus_compare.client import ApiError
 
 
@@ -143,3 +144,19 @@ def resolve_flexible(client, meter_point) -> FlexibleTariff:
         if not client.get(f"products/{product}/").get("is_tracker"):
             return FlexibleTariff(product_code=product, tariff_code=agreement.tariff_code)
     raise ValueError("No Flexible tariff found in this account's agreement history")
+
+
+def tracker_resolvers(client, supply, versions, region, period_from, period_to):
+    rate_entries = []
+    sc_entries = []
+    for version in versions:
+        tariff = build_tariff_code(supply, version.product_code, region)
+        rate_entries.append((
+            version.available_from, version.available_to,
+            fetch_rates(client, supply, version.product_code, tariff, period_from, period_to),
+        ))
+        sc_entries.append((
+            version.available_from, version.available_to,
+            fetch_standing_charges(client, supply, version.product_code, tariff, period_from, period_to),
+        ))
+    return VersionedLookup(rate_entries).rate_for, VersionedLookup(sc_entries).rate_for

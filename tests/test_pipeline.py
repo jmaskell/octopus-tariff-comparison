@@ -4,26 +4,28 @@ from decimal import Decimal
 from octopus_compare.config import Config
 from octopus_compare.pipeline import run_comparison
 from tests.fixtures.api_samples import (
-    ACCOUNT, PRODUCTS_LIST, PRODUCT_DETAIL,
-    FLEX_ELEC_RATES, FLEX_ELEC_STANDING,
+    ACCOUNT, FLEX_ELEC_RATES, FLEX_ELEC_STANDING,
 )
 
 
 class FakeClient:
-    """Routes paths to canned payloads covering one flat-rate month."""
+    """Routes paths to canned payloads covering one flat-rate month.
+
+    The account (from the ACCOUNT fixture) has a SILVER (tracker) agreement and a
+    VAR (flexible) agreement on each meter, so resolve_tracker walks newest-first:
+    VAR product detail (is_tracker False) then SILVER product detail (True).
+    """
 
     def get(self, path, params=None):
         if path == "accounts/A-8F18337C/":
             return ACCOUNT
-        if path == "electricity-meter-points/1200033187430/":
-            return {"gsp": "_C"}
-        if path == "products/SILVER-26-06-01/":
-            return PRODUCT_DETAIL
+        if path == "products/VAR-22-11-01/":
+            return {"is_tracker": False}
+        if path == "products/SILVER-24-12-31/":
+            return {"is_tracker": True}
         raise AssertionError(path)
 
     def get_results(self, path, params=None):
-        if path == "products/":
-            return PRODUCTS_LIST["results"]
         if "consumption" in path:
             return [{"consumption": 9.0,
                      "interval_start": "2026-04-01T00:00:00Z",

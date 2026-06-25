@@ -78,3 +78,18 @@ FLEX_ELEC_STANDING = {
          "valid_from": "2026-04-01T00:00:00Z", "valid_to": None},
     ]
 }
+
+GAS_CONSUMPTION_M3 = {
+    "results": [
+        {"consumption": 3.52, "interval_start": "2026-03-01T00:00:00Z",
+         "interval_end": "2026-03-02T00:00:00Z"},
+        {"consumption": 3.16, "interval_start": "2026-03-02T00:00:00Z",
+         "interval_end": "2026-03-03T00:00:00Z"},
+    ]
+}
+ELEC_CONSUMPTION_KWH = {
+    "results": [
+        {"consumption": 9.09, "interval_start": "2026-03-01T00:00:00Z",
+         "interval_end": "2026-03-02T00:00:00Z"},
+    ]
+}

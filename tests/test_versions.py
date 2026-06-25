@@ -6,7 +6,8 @@ from octopus_compare.account import MeterPoint, Agreement
 from octopus_compare.client import ApiError
 from octopus_compare.tracker import (
     discover_chain, _next_code, TrackerVersion,
-    tracker_versions_for_window, latest_tracker_version)
+    tracker_versions_for_window, latest_tracker_version,
+    resolve_flexible, FlexibleTariff)
 from tests.fixtures.api_samples import TRACKER_PRODUCTS
 
 
@@ -85,3 +86,12 @@ def test_window_versions_no_tracker_raises():
     meter = MeterPoint("mpan", ["s"], [Agreement("E-1R-VAR-22-11-01-C", date(2026, 4, 1), None)])
     with pytest.raises(ValueError):
         tracker_versions_for_window(WindowClient(), meter, date(2026, 1, 1), date(2026, 5, 1))
+
+
+def test_resolve_flexible_picks_newest_non_tracker():
+    meter = MeterPoint("mpan", ["s"], [
+        Agreement("E-1R-SILVER-25-09-02-C", date(2025, 1, 1), date(2026, 4, 1)),
+        Agreement("E-1R-VAR-22-11-01-C", date(2026, 4, 1), None),
+    ])
+    flex = resolve_flexible(WindowClient(), meter)
+    assert flex == FlexibleTariff(product_code="VAR-22-11-01", tariff_code="E-1R-VAR-22-11-01-C")

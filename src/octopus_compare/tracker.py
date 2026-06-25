@@ -127,3 +127,19 @@ def latest_tracker_version(versions: list[TrackerVersion]) -> TrackerVersion:
         if version.available_to is None:
             return version
     return max(versions, key=lambda v: v.available_from)
+
+
+@dataclass
+class FlexibleTariff:
+    product_code: str
+    tariff_code: str
+
+
+def resolve_flexible(client, meter_point) -> FlexibleTariff:
+    for agreement in sorted(
+        meter_point.agreements, key=lambda a: a.valid_from or date.min, reverse=True
+    ):
+        product = product_code_from_tariff(agreement.tariff_code)
+        if not client.get(f"products/{product}/").get("is_tracker"):
+            return FlexibleTariff(product_code=product, tariff_code=agreement.tariff_code)
+    raise ValueError("No Flexible tariff found in this account's agreement history")

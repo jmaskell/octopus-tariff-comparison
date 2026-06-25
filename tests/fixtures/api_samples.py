@@ -6,7 +6,10 @@ ACCOUNT = {
                 {
                     "mpan": "1200033187430",
                     "is_export": False,
-                    "meters": [{"serial_number": "19L3474725"}],
+                    "meters": [
+                        {"serial_number": "I98A06379"},
+                        {"serial_number": "19L3474725"},
+                    ],
                     "agreements": [
                         {"tariff_code": "E-1R-SILVER-24-12-31-C",
                          "valid_from": "2025-01-01T00:00:00Z",

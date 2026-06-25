@@ -12,7 +12,7 @@ class Agreement:
 @dataclass
 class MeterPoint:
     identifier: str
-    serial: str
+    serials: list[str]
     agreements: list[Agreement]
 
 
@@ -38,7 +38,7 @@ def _agreements(raw: list[dict]) -> list[Agreement]:
 def _meter_point(raw: dict, id_field: str) -> MeterPoint:
     return MeterPoint(
         identifier=raw[id_field],
-        serial=raw["meters"][0]["serial_number"],
+        serials=[m["serial_number"] for m in raw.get("meters", [])],
         agreements=_agreements(raw.get("agreements", [])),
     )
 

@@ -12,9 +12,9 @@ from tests.fixtures.api_samples import ACCOUNT
 def test_parse_account_extracts_meter_points():
     info = parse_account(ACCOUNT)
     assert info.electricity.identifier == "1200033187430"
-    assert info.electricity.serial == "19L3474725"
+    assert info.electricity.serials == ["I98A06379", "19L3474725"]
     assert info.gas.identifier == "3260975110"
-    assert info.gas.serial == "E6S12825431961"
+    assert info.gas.serials == ["E6S12825431961"]
     assert len(info.electricity.agreements) == 2
 
 

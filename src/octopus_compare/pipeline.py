@@ -14,7 +14,7 @@ from octopus_compare.tracker import resolve_tracker
 
 
 def _supply_costs(client, supply, meter, cfg):
-    raw = fetch_daily(client, supply, meter.identifier, meter.serial,
+    raw = fetch_daily(client, supply, meter.identifier, meter.serials,
                       cfg.period_from, cfg.period_to)
     kwh = to_kwh(raw, supply, cfg.gas_units, cfg.gas_calorific_value)
 

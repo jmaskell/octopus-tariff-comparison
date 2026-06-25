@@ -15,22 +15,31 @@ def _iso(d: date) -> str:
     return d.strftime("%Y-%m-%dT00:00:00Z")
 
 
-def fetch_daily(client, supply, identifier, serial, period_from, period_to):
-    path = f"{supply}-meter-points/{identifier}/meters/{serial}/consumption/"
-    results = client.get_results(
-        path,
-        {
-            "period_from": _iso(period_from),
-            "period_to": _iso(period_to),
-            "group_by": "day",
-            "order_by": "period",
-            "page_size": 25000,
-        },
-    )
+def fetch_daily(client, supply, identifier, serials, period_from, period_to):
+    """Daily consumption summed across every meter on the point, keyed by the
+    Europe/London date of interval_start.
+
+    A meter point can have several meters over time (meter swaps). A
+    decommissioned meter returns no data for a given period and the active one
+    returns it; meters never overlap in time, so summing across all of them
+    never double-counts and correctly covers a period that spans a swap.
+    """
     daily: dict[date, Decimal] = {}
-    for r in results:
-        day = _local_date(r["interval_start"])
-        daily[day] = daily.get(day, Decimal(0)) + Decimal(str(r["consumption"]))
+    for serial in serials:
+        path = f"{supply}-meter-points/{identifier}/meters/{serial}/consumption/"
+        results = client.get_results(
+            path,
+            {
+                "period_from": _iso(period_from),
+                "period_to": _iso(period_to),
+                "group_by": "day",
+                "order_by": "period",
+                "page_size": 25000,
+            },
+        )
+        for r in results:
+            day = _local_date(r["interval_start"])
+            daily[day] = daily.get(day, Decimal(0)) + Decimal(str(r["consumption"]))
     return daily
 
 

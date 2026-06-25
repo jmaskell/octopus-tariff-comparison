@@ -20,7 +20,7 @@ class FakeClient:
 def _meter():
     return MeterPoint(
         identifier="1200033187430",
-        serial="19L3474725",
+        serials=["19L3474725"],
         agreements=[
             Agreement("E-1R-SILVER-24-12-31-C", date(2025, 8, 19), date(2026, 3, 24)),
             Agreement("E-1R-VAR-22-11-01-C", date(2026, 3, 24), None),
@@ -41,7 +41,7 @@ def test_resolves_most_recent_tracker_agreement():
 def test_raises_when_no_tracker_in_history():
     client = FakeClient({"VAR-22-11-01": False})
     meter = MeterPoint(
-        "m", "s", [Agreement("E-1R-VAR-22-11-01-C", date(2026, 3, 24), None)]
+        "m", ["s"], [Agreement("E-1R-VAR-22-11-01-C", date(2026, 3, 24), None)]
     )
     with pytest.raises(ValueError):
         resolve_tracker(client, meter)

@@ -2,26 +2,50 @@ from datetime import date
 from decimal import Decimal
 
 from octopus_compare.consumption import fetch_daily, to_kwh
-from tests.fixtures.api_samples import GAS_CONSUMPTION_M3, ELEC_CONSUMPTION_KWH
+from tests.fixtures.api_samples import ELEC_CONSUMPTION_KWH
 
 
 class FakeClient:
     def __init__(self, results):
         self._results = results
-        self.path = None
+        self.paths = []
 
     def get_results(self, path, params=None):
-        self.path = path
+        self.paths.append(path)
         return self._results
 
 
 def test_fetch_daily_buckets_by_local_date():
     client = FakeClient(ELEC_CONSUMPTION_KWH["results"])
-    daily = fetch_daily(client, "electricity", "1200033187430", "19L3474725",
+    daily = fetch_daily(client, "electricity", "1200033187430", ["19L3474725"],
                         date(2026, 3, 1), date(2026, 3, 2))
     assert daily == {date(2026, 3, 1): Decimal("9.09")}
-    assert client.path == (
-        "electricity-meter-points/1200033187430/meters/19L3474725/consumption/")
+    assert client.paths == [
+        "electricity-meter-points/1200033187430/meters/19L3474725/consumption/"]
+
+
+def test_fetch_daily_sums_across_meters():
+    # A decommissioned meter returns nothing; the active meter returns the data.
+    by_serial = {
+        "OLD": [],
+        "NEW": [{"consumption": 9.09, "interval_start": "2026-03-01T00:00:00Z",
+                 "interval_end": "2026-03-02T00:00:00Z"}],
+    }
+
+    class MultiMeterClient:
+        def __init__(self):
+            self.serials_called = []
+
+        def get_results(self, path, params=None):
+            serial = path.split("/meters/")[1].split("/")[0]
+            self.serials_called.append(serial)
+            return by_serial[serial]
+
+    client = MultiMeterClient()
+    daily = fetch_daily(client, "electricity", "1200033187430", ["OLD", "NEW"],
+                        date(2026, 3, 1), date(2026, 3, 2))
+    assert daily == {date(2026, 3, 1): Decimal("9.09")}
+    assert client.serials_called == ["OLD", "NEW"]
 
 
 def test_gas_auto_detects_m3_and_converts():

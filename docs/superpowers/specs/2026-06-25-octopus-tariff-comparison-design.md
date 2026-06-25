@@ -135,10 +135,13 @@ total = subtotal                              # rates used are inc-VAT (see VAT 
   the next price-cap change. The same matching applies to standing charges, which
   are **tariff- and date-specific** (e.g. Flexible elec SC was 43.60p/day in March,
   42.18p Apr–May; Tracker SCs differ again).
-- **VAT:** domestic energy VAT is **5%**, applied to (energy + standing) subtotal.
-  Quoted unit rates are exc-VAT; the API exposes both `value_exc_vat` and
-  `value_inc_vat`. The engine uses `value_inc_vat` throughout (≈ exc × 1.05),
-  which already folds VAT into each figure. Validated against the bills.
+- **VAT:** domestic energy VAT is **5%**. Octopus rounds each line item in
+  **exc-VAT** terms (per-day energy, standing charge), sums them, then applies 5%
+  VAT to the subtotal — verified because bill 1's 23 tracker days sum exactly to
+  £44.56 → £55.88. The engine therefore uses `value_exc_vat` for line items and
+  applies VAT to the subtotal (using `value_inc_vat` throughout would not
+  reproduce the bills due to where rounding happens; the recommendation delta is
+  unaffected since VAT scales both tariffs equally).
 - **Gas m³ → kWh:** `kWh = m³ × 1.02264 × calorific_value / 3.6`. Calorific value
   varies (39.2 / 39.5 / 39.6 across the three bills); default 39.5, configurable.
   Tracker and Flexible gas rates are both p/kWh, so the same converted kWh feeds

@@ -99,3 +99,17 @@ TRACKER_PRODUCTS = {
         "available_to": None,
     },
 }
+
+
+# Two-month consumption spanning a month boundary (Mar 30, 31 -> Apr 1).
+def _rows(values):
+    out = []
+    for day, v in values.items():
+        out.append({"consumption": v,
+                    "interval_start": f"{day}T00:00:00Z",
+                    "interval_end": f"{day}T23:30:00Z"})
+    return out
+
+
+ELEC_TWO_MONTH = _rows({"2026-03-30": 9.0, "2026-03-31": 9.0, "2026-04-01": 9.0})
+GAS_TWO_MONTH = _rows({"2026-03-30": 30.0, "2026-03-31": 30.0, "2026-04-01": 30.0})

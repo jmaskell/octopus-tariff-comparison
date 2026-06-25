@@ -149,14 +149,19 @@ def resolve_flexible(client, meter_point) -> FlexibleTariff:
 def tracker_resolvers(client, supply, versions, region, period_from, period_to):
     rate_entries = []
     sc_entries = []
+    single = len(versions) == 1
     for version in versions:
         tariff = build_tariff_code(supply, version.product_code, region)
+        if single:
+            v_from, v_to = date.min, None
+        else:
+            v_from, v_to = version.available_from, version.available_to
         rate_entries.append((
-            version.available_from, version.available_to,
+            v_from, v_to,
             fetch_rates(client, supply, version.product_code, tariff, period_from, period_to),
         ))
         sc_entries.append((
-            version.available_from, version.available_to,
+            v_from, v_to,
             fetch_standing_charges(client, supply, version.product_code, tariff, period_from, period_to),
         ))
     return VersionedLookup(rate_entries).rate_for, VersionedLookup(sc_entries).rate_for

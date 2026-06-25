@@ -9,9 +9,12 @@ from octopus_compare.tracker import (
     tracker_versions_for_window,
     latest_tracker_version,
     tracker_resolvers,
-    TrackerVersion,
     _version_from_detail,
 )
+
+
+class PricingError(Exception):
+    pass
 
 
 def _flexible_resolvers(client, supply, flex, region, cfg):
@@ -50,8 +53,22 @@ def _supply_breakdown(client, supply, meter, cfg):
     trk_months = {}
     for month, sub in month_slices(kwh):
         days = set(sub)
-        flex_months[month] = (days, supply_cost(sub, flex_rate_for, flex_sc_for))
-        trk_months[month] = (days, supply_cost(sub, trk_rate_for, trk_sc_for))
+        try:
+            flex_cost = supply_cost(sub, flex_rate_for, flex_sc_for)
+        except KeyError as e:
+            raise PricingError(
+                f"Couldn't price {supply} for every day in the window: {e}. "
+                "Rates don't cover the full period — try a narrower window with --from/--to."
+            ) from e
+        try:
+            trk_cost = supply_cost(sub, trk_rate_for, trk_sc_for)
+        except KeyError as e:
+            raise PricingError(
+                f"Couldn't price {supply} for every day in the window: {e}. "
+                "Rates don't cover the full period — try a narrower window with --from/--to."
+            ) from e
+        flex_months[month] = (days, flex_cost)
+        trk_months[month] = (days, trk_cost)
     return region, latest, flex_months, trk_months
 
 

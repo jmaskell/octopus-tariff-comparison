@@ -47,3 +47,20 @@ def test_get_raises_apierror_on_401():
     c = OctopusClient("sk_test", session=session)
     with pytest.raises(ApiError):
         c.get("accounts/A-1/")
+
+
+def test_retries_5xx_then_succeeds(monkeypatch):
+    import octopus_compare.client as clientmod
+    monkeypatch.setattr(clientmod.time, "sleep", lambda _s: None)
+    session = FakeSession([FakeResponse(500, {}), FakeResponse(200, {"ok": 1})])
+    c = OctopusClient("sk_test", session=session)
+    assert c.get("x/") == {"ok": 1}
+
+
+def test_raises_apierror_after_exhausting_retries(monkeypatch):
+    import octopus_compare.client as clientmod
+    monkeypatch.setattr(clientmod.time, "sleep", lambda _s: None)
+    session = FakeSession([FakeResponse(429, {}), FakeResponse(429, {}), FakeResponse(429, {})])
+    c = OctopusClient("sk_test", session=session, max_retries=3)
+    with pytest.raises(ApiError):
+        c.get("x/")

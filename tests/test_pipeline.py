@@ -51,3 +51,35 @@ def test_run_comparison_produces_result():
     assert result.period_from == date(2026, 4, 1)
     assert result.actual_total > 0
     assert result.tracker_total > 0
+
+
+def test_actual_resolvers_price_per_day_across_agreements():
+    from octopus_compare.account import MeterPoint, Agreement
+    from octopus_compare.pipeline import _actual_resolvers
+
+    meter = MeterPoint("mpan", ["s"], [
+        Agreement("E-1R-SILVER-24-12-31-C", date(2026, 3, 1), date(2026, 3, 24)),
+        Agreement("E-1R-VAR-22-11-01-C", date(2026, 3, 24), None),
+    ])
+
+    class SplitRateClient:
+        def get_results(self, path, params=None):
+            if "standing-charges" in path:
+                return [{"value_exc_vat": 40.0, "valid_from": None, "valid_to": None}]
+            if "SILVER" in path:
+                return [{"value_exc_vat": 30.0,
+                         "valid_from": "2026-03-01T00:00:00Z",
+                         "valid_to": "2026-03-24T00:00:00Z"}]
+            return [{"value_exc_vat": 20.0,
+                     "valid_from": "2026-03-24T00:00:00Z", "valid_to": None}]
+
+    cfg = Config(
+        api_key="x", account="A",
+        period_from=date(2026, 3, 20), period_to=date(2026, 3, 28),
+        output_format="text", gas_calorific_value=Decimal("39.5"),
+        gas_units="kwh", verbose=False,
+    )
+    rate_for, _sc = _actual_resolvers(SplitRateClient(), "electricity", meter, cfg)
+    assert rate_for(date(2026, 3, 23)) == Decimal("30")  # Tracker (SILVER) day
+    assert rate_for(date(2026, 3, 24)) == Decimal("20")  # switch day -> Flexible
+    assert rate_for(date(2026, 3, 27)) == Decimal("20")  # Flexible day

@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Personal data — raw bills contain PII (kept locally, used to build eval fixtures)
+bills/*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# OS
+.DS_Store

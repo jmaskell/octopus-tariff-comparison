@@ -12,8 +12,6 @@ from octopus_compare.verdict import Verdict, decide
 _MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-_NAMES = {"flexible": "Flexible", "tracker": "Tracker", "fixed": "12M Fixed"}
-
 
 def _pct(part: Decimal, whole: Decimal) -> Decimal:
     if whole == 0:
@@ -268,7 +266,7 @@ def format_json(result: ComparisonResult) -> str:
             "monthly": [
                 {"month": str(row.month), "days": row.days,
                  "flexible": str(row.flexible_pounds), "tracker": str(row.tracker_pounds),
-                 "verdict": row.verdict.value}
+                 "verdict": None if suppressed else row.verdict.value}
                 for row in result.monthly
             ],
             "flexible_total": str(result.flexible_total),
@@ -300,8 +298,8 @@ class AgileMonthlyRow:
     agile_pounds: Decimal
 
     @property
-    def cheapest(self) -> str:
-        return "flexible" if self.flexible_pounds <= self.agile_pounds else "agile"
+    def verdict(self) -> Verdict:
+        return decide(self.flexible_pounds, self.agile_pounds)
 
 
 @dataclass
@@ -466,11 +464,11 @@ def format_agile_text(result: AgileResult) -> str:
     lines.append("By month                 Flexible      Agile")
     show_ticks = not agile_verdict_suppressed(result)
     for row in result.monthly:
-        c = row.cheapest
+        v = row.verdict
         lines.append(
             f"  {_month_label(row.month, row.days):<20} "
-            f"{_cell(row.flexible_pounds, show_ticks and c == 'flexible'):<14}"
-            f"{_cell(row.agile_pounds, show_ticks and c == 'agile')}"
+            f"{_cell(row.flexible_pounds, show_ticks and v == Verdict.STAY):<14}"
+            f"{_cell(row.agile_pounds, show_ticks and v == Verdict.SWITCH)}"
         )
     v = recommend_agile(result)
     lines.append(
@@ -549,7 +547,7 @@ def format_agile_json(result: AgileResult) -> str:
             "monthly": [
                 {"month": str(r.month), "days": r.days,
                  "flexible": str(r.flexible_pounds), "agile": str(r.agile_pounds),
-                 "cheapest": r.cheapest}
+                 "verdict": None if suppressed else r.verdict.value}
                 for r in result.monthly
             ],
             "flexible_total": str(result.flexible_total),

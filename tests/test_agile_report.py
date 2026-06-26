@@ -237,3 +237,67 @@ def test_header_follows_total_bill_not_energy():
     assert any("more expensive" in line for line in lines)
     assert any("Energy-only price pattern" in line for line in lines)
     assert any("=" in line and "Total" in line for line in lines)  # reconciliation
+
+
+# ---- Fix 2: AgileMonthlyRow.verdict uses tie band ----
+
+def test_agile_monthly_row_verdict_too_close():
+    """A month within the tie band must report TOO_CLOSE, not a winner."""
+    row = AgileMonthlyRow(date(2026, 1, 1), 31, Decimal("100.40"), Decimal("100.00"))
+    assert row.verdict == Verdict.TOO_CLOSE
+
+
+def test_agile_monthly_row_verdict_stay():
+    """Flexible clearly cheaper → STAY."""
+    row = AgileMonthlyRow(date(2026, 1, 1), 31, Decimal("80.00"), Decimal("100.00"))
+    assert row.verdict == Verdict.STAY
+
+
+def test_agile_monthly_row_verdict_switch():
+    """Agile clearly cheaper → SWITCH."""
+    row = AgileMonthlyRow(date(2026, 1, 1), 31, Decimal("100.00"), Decimal("80.00"))
+    assert row.verdict == Verdict.SWITCH
+
+
+def test_format_agile_text_no_tick_for_too_close_month():
+    """A month within the tie band must render with no ✓ in the monthly table."""
+    base = _result("286.80", "234.64")
+    # Replace monthly with a single row that's within tie band
+    base.monthly = [AgileMonthlyRow(date(2026, 1, 1), 31, Decimal("100.40"), Decimal("100.00"))]
+    text = format_agile_text(base)
+    monthly_section = text.split("By month")[1].split("Total")[0]
+    assert "✓" not in monthly_section
+
+
+def test_format_agile_text_tick_for_clear_switch_month():
+    """A month with a clear Agile win must show ✓ on the Agile column."""
+    base = _result("286.80", "234.64")
+    base.monthly = [AgileMonthlyRow(date(2026, 1, 1), 31, Decimal("100.00"), Decimal("80.00"))]
+    text = format_agile_text(base)
+    monthly_section = text.split("By month")[1].split("Total")[0]
+    assert "✓" in monthly_section
+
+
+# ---- Fix 1 (agile): JSON monthly verdict key and suppression ----
+
+def test_format_agile_json_monthly_verdict_suppressed_when_incomplete():
+    """Monthly verdicts must be None in JSON when coverage is incomplete."""
+    partial_cov = _agile_cov(False)
+    base = _result("286.80", "234.64", cov=partial_cov)
+    data = json.loads(format_agile_json(base))
+    assert data["verdict_suppressed"] is True
+    assert data["monthly"][0]["verdict"] is None
+
+
+def test_format_agile_json_monthly_verdict_present_when_clean():
+    """Monthly verdict key is emitted and equals the row's verdict when clean."""
+    data = json.loads(format_agile_json(_result("286.80", "234.64")))
+    assert data["verdict_suppressed"] is False
+    # The single monthly row has flex=286.80, agile=234.64 → SWITCH
+    assert data["monthly"][0]["verdict"] == Verdict.SWITCH.value
+
+
+def test_format_agile_json_monthly_has_no_cheapest_key():
+    """The old 'cheapest' key must no longer appear in monthly rows."""
+    data = json.loads(format_agile_json(_result("286.80", "234.64")))
+    assert "cheapest" not in data["monthly"][0]

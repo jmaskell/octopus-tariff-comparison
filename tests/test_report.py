@@ -136,3 +136,23 @@ def test_format_json_suppressed_case():
     assert data["flexible_total"] == "1000"
     assert data["tracker_total"] == "900"
     assert data["coverage"]["complete"] is False
+
+
+def test_format_json_monthly_verdict_suppressed_when_incomplete():
+    """Monthly verdicts must be None in JSON when coverage is incomplete."""
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    base = _result("1000", "900", "800", coverage=cov)
+    base.monthly = [MonthlyRow(date(2026, 1, 1), 31, Decimal("1000"), Decimal("900"))]
+    data = json.loads(format_json(base))
+    assert data["verdict_suppressed"] is True
+    assert data["monthly"][0]["verdict"] is None
+
+
+def test_format_json_monthly_verdict_present_when_clean():
+    """Monthly verdicts must be the row verdict value in JSON when coverage is complete."""
+    base = _result("1000", "900", "1100")
+    base.monthly = [MonthlyRow(date(2026, 1, 1), 31, Decimal("1000"), Decimal("900"))]
+    data = json.loads(format_json(base))
+    assert data["verdict_suppressed"] is False
+    assert data["monthly"][0]["verdict"] == Verdict.SWITCH.value

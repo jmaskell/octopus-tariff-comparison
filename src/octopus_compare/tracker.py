@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from octopus_compare.account import MeterPoint, product_code_from_tariff, build_tariff_code
-from octopus_compare.rates import fetch_rates, fetch_standing_charges, VersionedLookup
+from octopus_compare.rates import fetch_rates, fetch_standing_charges, VersionedLookup, flat_lookup
 from octopus_compare.client import ApiError
 
 
@@ -165,3 +165,49 @@ def tracker_resolvers(client, supply, versions, region, period_from, period_to):
             fetch_standing_charges(client, supply, version.product_code, tariff, period_from, period_to),
         ))
     return VersionedLookup(rate_entries).rate_for, VersionedLookup(sc_entries).rate_for
+
+
+_FIXED_PREFIX = "OE-FIX-12M-"
+
+
+@dataclass
+class FixedProduct:
+    product_code: str
+    display_name: str
+    available_from: date
+
+
+def resolve_fixed(client, override: str | None = None) -> FixedProduct:
+    if override:
+        detail = client.get(f"products/{override}/")
+        return FixedProduct(
+            override,
+            detail.get("full_name") or detail.get("display_name") or override,
+            _to_date(detail.get("available_from")),
+        )
+    results = client.get_results("products/", {"brand": "OCTOPUS_ENERGY"})
+    candidates = [r for r in results if r.get("code", "").startswith(_FIXED_PREFIX)]
+    if not candidates:
+        raise ValueError("No Octopus 12M Fixed product found in the product list")
+    current = [r for r in candidates if not r.get("available_to")]
+    pool = current or candidates
+    best = max(pool, key=lambda r: _to_date(r.get("available_from")) or date.min)
+    return FixedProduct(
+        best["code"],
+        best.get("full_name") or best.get("display_name") or best["code"],
+        _to_date(best.get("available_from")),
+    )
+
+
+def fixed_resolvers(client, supply, product, region):
+    """Per-day resolvers for the 12M Fixed column: the product's locked rate is
+    fetched once (at its own available_from) and applied flat to every day."""
+    tariff = build_tariff_code(supply, product.product_code, region)
+    anchor = product.available_from
+    rates = fetch_rates(client, supply, product.product_code, tariff,
+                        anchor, anchor + timedelta(days=1))
+    sc = fetch_standing_charges(client, supply, product.product_code, tariff,
+                                anchor, anchor + timedelta(days=1))
+    rate_value = rates.rate_for(anchor)
+    sc_value = sc.rate_for(anchor)
+    return flat_lookup(rate_value).rate_for, flat_lookup(sc_value).rate_for

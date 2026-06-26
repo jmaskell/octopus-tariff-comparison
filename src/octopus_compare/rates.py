@@ -64,6 +64,12 @@ def fetch_standing_charges(client, supply, product_code, tariff_code, period_fro
     return build_lookup(results)
 
 
+def flat_lookup(value: Decimal) -> RateLookup:
+    """A RateLookup that returns the same value for every day (no date gating).
+    Backs the 12M Fixed column, whose locked rate applies flat across the window."""
+    return RateLookup([_Window(date.min, date.max, value)])
+
+
 class VersionedLookup:
     """Pick, per day, the RateLookup of the version whose availability window
     covers that day, then delegate. Used for the multi-version Tracker series."""

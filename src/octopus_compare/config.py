@@ -20,6 +20,7 @@ class Config:
     verbose: bool
     tracker_product: str | None = None
     region: str | None = None
+    fixed_product: str | None = None
 
 
 def _parse_date(value: str) -> date:
@@ -37,6 +38,7 @@ def load_config(argv: list[str], env: dict[str, str], today: date) -> Config:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--tracker-product", dest="tracker_product", default=None)
     parser.add_argument("--region", dest="region", default=None)
+    parser.add_argument("--fixed-product", dest="fixed_product", default=None)
     args = parser.parse_args(argv)
 
     api_key = env.get("OCTOPUS_API_KEY", "").strip()
@@ -60,4 +62,5 @@ def load_config(argv: list[str], env: dict[str, str], today: date) -> Config:
         verbose=args.verbose,
         tracker_product=args.tracker_product,
         region=args.region,
+        fixed_product=args.fixed_product,
     )

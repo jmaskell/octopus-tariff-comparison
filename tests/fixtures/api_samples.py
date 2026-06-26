@@ -113,3 +113,12 @@ def _rows(values):
 
 ELEC_TWO_MONTH = _rows({"2026-03-30": 9.0, "2026-03-31": 9.0, "2026-04-01": 9.0})
 GAS_TWO_MONTH = _rows({"2026-03-30": 30.0, "2026-03-31": 30.0, "2026-04-01": 30.0})
+
+# Listing payload for resolve_fixed (GET /products/?brand=OCTOPUS_ENERGY).
+FIXED_PRODUCTS_LIST = [
+    {"code": "OE-FIX-12M-26-06-24", "full_name": "Octopus 12M Fixed June 2026 v5",
+     "display_name": "Octopus 12M Fixed",
+     "available_from": "2026-06-24T00:00:00+01:00", "available_to": None},
+    {"code": "COSY-FIX-12M-26-06-25", "full_name": "Cosy Octopus 12M Fixed",
+     "display_name": "Cosy", "available_from": "2026-06-25T00:00:00+01:00", "available_to": None},
+]

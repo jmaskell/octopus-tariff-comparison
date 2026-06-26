@@ -1,6 +1,6 @@
 import argparse
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 
@@ -21,6 +21,9 @@ class Config:
     tracker_product: str | None = None
     region: str | None = None
     fixed_product: str | None = None
+    command: str | None = None
+    agile_product: str | None = None
+    peak_window: tuple = field(default_factory=lambda: (time(16, 0), time(19, 0)))
 
 
 def _parse_date(value: str) -> date:

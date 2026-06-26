@@ -183,10 +183,11 @@ def format_text(result: ComparisonResult) -> str:
     lines += _block2("Electricity", result.elec_flexible, result.elec_tracker)
     lines += _block2("Gas", result.gas_flexible, result.gas_tracker)
     lines.append("By month (elec + gas)  Flexible        Tracker")
+    show_ticks = not verdict_suppressed(result)
     for row in result.monthly:
         v = row.verdict
-        flex_win = v == Verdict.STAY
-        trk_win = v == Verdict.SWITCH
+        flex_win = show_ticks and v == Verdict.STAY
+        trk_win = show_ticks and v == Verdict.SWITCH
         lines.append(
             f"  {_month_label(row.month, row.days):<20} "
             f"{_cell(row.flexible_pounds, flex_win):<14} "
@@ -195,8 +196,8 @@ def format_text(result: ComparisonResult) -> str:
     tv = recommend(result)
     lines.append(
         f"  {'Total':<20} "
-        f"{_cell(result.flexible_total, tv == Verdict.STAY):<14} "
-        f"{_cell(result.tracker_total, tv == Verdict.SWITCH)}"
+        f"{_cell(result.flexible_total, show_ticks and tv == Verdict.STAY):<14} "
+        f"{_cell(result.tracker_total, show_ticks and tv == Verdict.SWITCH)}"
     )
     lines.append("")
     lines += _backtest_verdict_lines(result)
@@ -243,6 +244,9 @@ def _coverage_json(result: ComparisonResult) -> dict:
 
 def format_json(result: ComparisonResult) -> str:
     gi = result.gas_units
+    suppressed = verdict_suppressed(result)
+    backtest_reco = None if suppressed else recommend(result).value
+    forward_verdict = None if suppressed else fixed_verdict(result).value
     return json.dumps(
         {
             "period_from": str(result.period_from),
@@ -269,15 +273,15 @@ def format_json(result: ComparisonResult) -> str:
             ],
             "flexible_total": str(result.flexible_total),
             "tracker_total": str(result.tracker_total),
-            "backtest": {"recommendation": recommend(result).value},
+            "backtest": {"recommendation": backtest_reco},
             "forward_lock_in": {
                 "fixed_total": str(result.fixed_total),
                 "delta_vs_flexible_pounds": str(result.flexible_total - result.fixed_total),
                 "delta_pct": str(_pct(abs(result.flexible_total - result.fixed_total),
                                       result.flexible_total)),
-                "verdict": fixed_verdict(result).value,
+                "verdict": forward_verdict,
             },
-            "verdict_suppressed": verdict_suppressed(result),
+            "verdict_suppressed": suppressed,
             "coverage": _coverage_json(result),
             "gas_units": (None if gi is None else
                           {"requested": gi.requested, "resolved": gi.resolved,

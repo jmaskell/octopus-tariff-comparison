@@ -7,7 +7,7 @@ from octopus_compare.consumption import GasUnitInfo
 from octopus_compare.costing import SupplyCost
 from octopus_compare.report import (
     ComparisonResult, MonthlyRow, recommend, fixed_verdict,
-    verdict_suppressed, format_text,
+    verdict_suppressed, format_text, format_json,
 )
 from octopus_compare.tracker import TrackerVersion, FixedProduct
 from octopus_compare.verdict import Verdict
@@ -97,3 +97,42 @@ def ComparisonResultWithMonth():
     base.monthly = [MonthlyRow(date(2026, 1, 1), 31,
                                Decimal("100.40"), Decimal("100.00"))]
     return base
+
+
+def test_format_text_suppressed_shows_no_ticks_even_with_clear_month():
+    # Clear SWITCH margin per row/total, but incomplete coverage suppresses ticks.
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    base = _result("1000", "900", "800", coverage=cov)
+    base.monthly = [MonthlyRow(date(2026, 1, 1), 31,
+                               Decimal("1000"), Decimal("900"))]
+    out = format_text(base)
+    assert "NO RECOMMENDATION" in out
+    # No ✓ anywhere in the backtest table (monthly rows + Total row).
+    backtest_table = out.split("By month")[1].split("HISTORICAL")[0]
+    assert "✓" not in backtest_table
+
+
+def test_format_json_clean_case():
+    data = json.loads(format_json(_result("1000", "900", "1100")))
+    assert data["backtest"]["recommendation"] == Verdict.SWITCH.value
+    assert data["forward_lock_in"]["fixed_total"] == "1100"
+    assert data["forward_lock_in"]["verdict"] == fixed_verdict(
+        _result("1000", "900", "1100")).value
+    assert data["coverage"]["complete"] is True
+    assert data["gas_units"]["resolved"] == "m3"
+    assert data["verdict_suppressed"] is False
+
+
+def test_format_json_suppressed_case():
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    data = json.loads(format_json(_result("1000", "900", "800", coverage=cov)))
+    assert data["verdict_suppressed"] is True
+    assert data["backtest"]["recommendation"] is None
+    assert data["forward_lock_in"]["verdict"] is None
+    # Numeric fields are still present.
+    assert data["forward_lock_in"]["fixed_total"] == "800"
+    assert data["flexible_total"] == "1000"
+    assert data["tracker_total"] == "900"
+    assert data["coverage"]["complete"] is False

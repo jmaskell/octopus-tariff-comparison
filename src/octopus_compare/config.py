@@ -18,6 +18,7 @@ class Config:
     gas_calorific_value: Decimal
     gas_units: str
     verbose: bool
+    allow_partial_data: bool = False
     tracker_product: str | None = None
     region: str | None = None
     fixed_product: str | None = None
@@ -49,6 +50,8 @@ def load_config(argv: list[str], env: dict[str, str], today: date) -> Config:
     common.add_argument("--gas-calorific-value", type=Decimal, default=Decimal("39.5"))
     common.add_argument("--gas-units", choices=["auto", "m3", "kwh"], default="auto")
     common.add_argument("--verbose", action="store_true")
+    common.add_argument("--allow-partial-data", dest="allow_partial_data",
+                        action="store_true")
     common.add_argument("--tracker-product", dest="tracker_product", default=None)
     common.add_argument("--region", dest="region", default=None)
     common.add_argument("--fixed-product", dest="fixed_product", default=None)
@@ -85,6 +88,7 @@ def load_config(argv: list[str], env: dict[str, str], today: date) -> Config:
         gas_calorific_value=args.gas_calorific_value,
         gas_units=args.gas_units,
         verbose=args.verbose,
+        allow_partial_data=args.allow_partial_data,
         tracker_product=args.tracker_product,
         region=args.region,
         fixed_product=args.fixed_product,

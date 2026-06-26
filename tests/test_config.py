@@ -92,3 +92,18 @@ def test_compare_flags_still_work_without_subcommand():
     cfg = load_config(["--tracker-product", "SILVER-26-04-01"], ENV, TODAY)
     assert cfg.command == "compare"
     assert cfg.tracker_product == "SILVER-26-04-01"
+
+
+def test_allow_partial_data_defaults_false():
+    cfg = load_config([], ENV, TODAY)
+    assert cfg.allow_partial_data is False
+
+
+def test_allow_partial_data_flag_on_compare():
+    cfg = load_config(["--allow-partial-data"], ENV, TODAY)
+    assert cfg.allow_partial_data is True
+
+
+def test_allow_partial_data_flag_on_agile():
+    cfg = load_config(["agile", "--allow-partial-data"], ENV, TODAY)
+    assert cfg.allow_partial_data is True

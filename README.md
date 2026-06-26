@@ -30,7 +30,10 @@ Get your API key: https://octopus.energy/dashboard/new/accounts/personal-details
 The `agile` subcommand costs your real half-hourly electricity usage against Agile's published
 half-hourly rates for the same dates (a pure what-if backtest), reports Flexible-vs-Agile totals
 and a monthly table, and a time-of-use insight block (effective p/kWh, peak share, cheapest/priciest
-half-hours, negative-price slots). Gas is excluded — Agile is electricity-only.
+half-hours, negative-price slots), plus a breakdown of *why* Agile is cheaper or dearer — splitting
+the difference into a **structural** part (Agile's average price vs the Flexible flat rate) and a
+**behavioural** part (whether your usage falls at cheaper- or dearer-than-average times) — and an
+hour-of-day table of usage vs price. Gas is excluded — Agile is electricity-only.
 
 ## Tests
 

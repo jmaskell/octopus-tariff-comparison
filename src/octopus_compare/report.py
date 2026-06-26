@@ -344,7 +344,7 @@ def _agile_decomposition_lines(d) -> list[str]:
 def _agile_hour_lines(b) -> list[str]:
     lines = ["Hour-of-day (London)       usage   avg Agile"]
     for hb in b.by_hour:
-        bar = "█" * round(hb.usage_pct / Decimal("0.5"))
+        bar = "█" * min(40, round(hb.usage_pct / Decimal("0.5")))
         mark = "  cheap" if hb.marker == "cheap" else "  DEAR" if hb.marker == "dear" else ""
         lines.append(f"  {hb.hour:02d}:00  {hb.usage_pct:>5}%   {hb.avg_price_p:>5}p  {bar}{mark}")
     lines.append(f"  Usage in 6 cheapest hours: {b.cheapest6_usage_pct}% · "

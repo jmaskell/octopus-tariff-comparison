@@ -1,8 +1,9 @@
+import pytest
 from datetime import date
 from decimal import Decimal
 
 from octopus_compare.config import Config
-from octopus_compare.pipeline import run_comparison
+from octopus_compare.pipeline import run_comparison, PricingError
 from octopus_compare.report import format_text
 from tests.fixtures.api_samples import (
     ACCOUNT, ELEC_TWO_MONTH, GAS_TWO_MONTH, FIXED_PRODUCTS_LIST)
@@ -71,3 +72,41 @@ def test_run_comparison_text_renders_fixed():
     assert "OE-FIX-12M-26-06-24" in text
     assert "Fixed" in text and "✓" in text
     assert "Mar 2026" in text and "Apr 2026" in text
+
+
+class FakeClientGappedFlex(FakeClient):
+    """Same as FakeClient but the Flexible (VAR) rates start on 2026-04-01,
+    leaving Mar 30/31 uncovered — should trigger PricingError."""
+
+    def get_results(self, path, params=None):
+        if path == "products/":
+            return FIXED_PRODUCTS_LIST
+        supply = "electricity" if "electricity" in path else "gas"
+        if "consumption" in path:
+            return ELEC_TWO_MONTH if supply == "electricity" else GAS_TWO_MONTH
+        family = ("SILVER" if "SILVER" in path
+                  else "OE-FIX-12M" if "OE-FIX-12M" in path else "VAR")
+        table = self.STAND if "standing-charges" in path else self.UNIT
+        # For VAR (Flexible) rates, start on Apr 1 so Mar days are uncovered.
+        if family == "VAR":
+            return [{"value_exc_vat": table[family][supply],
+                     "valid_from": "2026-04-01T00:00:00Z", "valid_to": None}]
+        return [{"value_exc_vat": table[family][supply], "valid_from": None, "valid_to": None}]
+
+
+def test_uncovered_day_raises_pricing_error():
+    with pytest.raises(PricingError):
+        run_comparison(FakeClientGappedFlex(), _config())
+
+
+def test_tracker_product_override_prices_whole_window():
+    cfg = Config(
+        api_key="sk", account="A-8F18337C",
+        period_from=date(2026, 3, 30), period_to=date(2026, 4, 2),
+        output_format="text", gas_calorific_value=Decimal("39.5"),
+        gas_units="kwh", verbose=False,
+        tracker_product="SILVER-24-12-31",
+    )
+    result = run_comparison(FakeClient(), cfg)
+    assert result.tracker.product_code == "SILVER-24-12-31"
+    assert len(result.monthly) == 2

@@ -19,6 +19,14 @@ def _period_rates(rate_map: dict[datetime, Decimal], period_from: date,
 
 
 @dataclass
+class HourBucket:
+    hour: int                 # London-local hour 0-23
+    usage_pct: Decimal        # % of total kWh used in this hour
+    avg_price_p: Decimal      # mean Agile price in this hour (exc-VAT p/kWh)
+    marker: str | None        # "cheap" | "dear" | None
+
+
+@dataclass
 class Decomposition:
     flex_p: Decimal             # Flexible effective unit price, exc-VAT p/kWh
     time_avg_p: Decimal         # Agile time-average (flat-user) price
@@ -50,3 +58,31 @@ def compute_decomposition(period_rates: dict[datetime, Decimal],
         total_pounds=pounds(total * total_kwh),
         total_kwh=total_kwh,
     )
+
+
+def compute_hours(halfhourly_kwh: dict[datetime, Decimal],
+                  period_rates: dict[datetime, Decimal], total_kwh: Decimal,
+                  time_avg_p: Decimal) -> tuple[list, Decimal, Decimal]:
+    usage = {h: Decimal(0) for h in range(24)}
+    for instant, kwh in halfhourly_kwh.items():
+        usage[instant.astimezone(_LONDON).hour] += Decimal(kwh)
+    prices: dict[int, list] = {h: [] for h in range(24)}
+    for instant, rate in period_rates.items():
+        prices[instant.astimezone(_LONDON).hour].append(rate)
+
+    cheap_thresh = time_avg_p * Decimal("0.8")
+    dear_thresh = time_avg_p * Decimal("1.3")
+    buckets = []
+    for h in range(24):
+        pct = (usage[h] / total_kwh * 100).quantize(Decimal("0.1")) if total_kwh else Decimal(0)
+        if prices[h]:
+            avg = (sum(prices[h], Decimal(0)) / len(prices[h])).quantize(Decimal("0.1"))
+            marker = "cheap" if avg < cheap_thresh else "dear" if avg > dear_thresh else None
+        else:
+            avg, marker = Decimal(0), None
+        buckets.append(HourBucket(h, pct, avg, marker))
+
+    priced = sorted((b for b in buckets if prices[b.hour]), key=lambda b: b.avg_price_p)
+    cheapest6 = sum((b.usage_pct for b in priced[:6]), Decimal(0))
+    dearest6 = sum((b.usage_pct for b in priced[-6:]), Decimal(0))
+    return buckets, cheapest6, dearest6

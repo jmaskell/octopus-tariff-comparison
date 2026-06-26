@@ -3,7 +3,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from octopus_compare.agile_breakdown import (
-    _period_rates, compute_decomposition)
+    _period_rates, compute_decomposition, compute_hours, HourBucket)
 
 UTC = ZoneInfo("UTC")
 
@@ -47,3 +47,27 @@ def test_period_filter_excludes_boundary_day():
     assert datetime(2026, 5, 30, 0, 0, tzinfo=UTC) in pr
     assert datetime(2026, 5, 31, 0, 0, tzinfo=UTC) not in pr
     assert len(pr) == 2
+
+
+def test_compute_hours_buckets_and_markers():
+    hh = {datetime(2026, 3, 1, 14, 0, tzinfo=UTC): Decimal("1"),
+          datetime(2026, 3, 1, 18, 0, tzinfo=UTC): Decimal("1")}
+    period_rates = {datetime(2026, 3, 1, 14, 0, tzinfo=UTC): Decimal("5"),
+                    datetime(2026, 3, 1, 18, 0, tzinfo=UTC): Decimal("40")}
+    buckets, _c, _d = compute_hours(hh, period_rates, Decimal("2"), Decimal("22.5"))
+    assert len(buckets) == 24
+    assert buckets[14].usage_pct == Decimal("50.0")
+    assert buckets[14].avg_price_p == Decimal("5.0")
+    assert buckets[14].marker == "cheap"        # 5 < 22.5*0.8 = 18
+    assert buckets[18].marker == "dear"         # 40 > 22.5*1.3 = 29.25
+    assert buckets[0].avg_price_p == Decimal("0")  # no slots that hour
+    assert buckets[0].marker is None
+
+
+def test_compute_hours_summary_shares():
+    # hours 0..11 priced 1..12p; all usage in hour 11 (the dearest)
+    period_rates = {datetime(2026, 3, 1, h, 0, tzinfo=UTC): Decimal(h + 1) for h in range(12)}
+    hh = {datetime(2026, 3, 1, 11, 0, tzinfo=UTC): Decimal("1")}
+    _b, cheap6, dear6 = compute_hours(hh, period_rates, Decimal("1"), Decimal("6.5"))
+    assert dear6 == Decimal("100.0")     # hours 6..11 are the dearest 6; usage is in 11
+    assert cheap6 == Decimal("0.0")      # hours 0..5 are the cheapest 6; no usage there

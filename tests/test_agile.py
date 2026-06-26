@@ -133,3 +133,48 @@ def test_agile_resolvers_merges_versions():
     # standing charge selected per version by date
     assert sc_for(date(2024, 1, 15)) == Decimal("30.0")
     assert sc_for(date(2024, 11, 15)) == Decimal("45.0")
+
+
+def test_resolve_agile_versions_excludes_outgoing():
+    """The AGILE- prefix also matches AGILE-OUTGOING-* (the export/Outgoing
+    tariff), which must NOT be priced as an import tariff."""
+    listing = AGILE_PRODUCTS_LIST + [
+        {"code": "AGILE-OUTGOING-19-05-13", "full_name": "Agile Outgoing v1",
+         "display_name": "Agile Outgoing",
+         "available_from": "2018-01-01T00:00:00Z", "available_to": None},
+    ]
+
+    class ListClient:
+        def get_results(self, path, params=None):
+            assert path == "products/"
+            return listing
+
+    versions = resolve_agile_versions(ListClient(), date(2026, 1, 1), date(2026, 5, 31))
+    codes = [v.product_code for v in versions]
+    assert "AGILE-OUTGOING-19-05-13" not in codes
+    assert codes == ["AGILE-24-10-01"]
+
+
+def test_agile_resolvers_cover_period_to_boundary_instant():
+    """The consumption endpoint includes a half-hour at exactly period_to (00:00
+    of the --to date), but the rates endpoint is exclusive at period_to. The rate
+    fetch must extend past period_to so that boundary instant has a covering rate."""
+    boundary = datetime(2026, 5, 30, 0, 0, tzinfo=_UTC)
+
+    class BoundaryAwareClient:
+        def get_results(self, path, params=None):
+            if "standing-charges" in path:
+                return [{"value_exc_vat": 40.0, "valid_from": None, "valid_to": None}]
+            # Honour period_to like the real rates API: only rates strictly before it.
+            end = datetime.fromisoformat(params["period_to"].replace("Z", "+00:00"))
+            rows = []
+            for inst in (datetime(2026, 5, 29, 23, 30, tzinfo=_UTC), boundary):
+                if inst < end:
+                    rows.append({"value_exc_vat": 12.0, "valid_from": inst.isoformat(),
+                                 "valid_to": inst.isoformat()})
+            return rows
+
+    v = AgileVersion("AGILE-24-10-01", "Agile Octopus", date(2024, 10, 1), None)
+    rate_for, _sc = agile_resolvers(
+        BoundaryAwareClient(), [v], "C", date(2026, 5, 28), date(2026, 5, 30))
+    assert rate_for(boundary) == Decimal("12.0")

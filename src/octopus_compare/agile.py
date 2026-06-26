@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -37,6 +37,9 @@ def build_halfhourly_lookup(results: list[dict]) -> HalfHourlyRates:
 
 
 _AGILE_PREFIX = "AGILE-"
+# AGILE-OUTGOING-* is the export/Outgoing tariff (selling power back), not an
+# import tariff — it must be excluded from the consumption comparison.
+_OUTGOING_PREFIX = "AGILE-OUTGOING"
 
 
 def _to_date(value: str | None) -> date | None:
@@ -73,6 +76,7 @@ def resolve_agile_versions(client, period_from, period_to, override=None):
         _version(r["code"], r)
         for r in results
         if r.get("code", "").startswith(_AGILE_PREFIX)
+        and not r.get("code", "").startswith(_OUTGOING_PREFIX)
     ]
     in_window = [
         v for v in versions
@@ -95,11 +99,15 @@ def agile_resolvers(client, versions, region, period_from, period_to):
     by_instant: dict[datetime, Decimal] = {}
     sc_entries = []
     single = len(versions) == 1
+    # The consumption endpoint includes the half-hour at exactly period_to (00:00
+    # of the --to date), but the rates/standing-charges endpoints are exclusive at
+    # period_to. Fetch one extra day so that boundary half-hour has a covering rate.
+    fetch_to = period_to + timedelta(days=1)
     for v in versions:
         tariff = build_tariff_code("electricity", v.product_code, region)
         rate_results = client.get_results(
             f"products/{v.product_code}/electricity-tariffs/{tariff}/standard-unit-rates/",
-            {"period_from": _iso(period_from), "period_to": _iso(period_to),
+            {"period_from": _iso(period_from), "period_to": _iso(fetch_to),
              "page_size": 25000},
         )
         for r in rate_results:
@@ -108,6 +116,6 @@ def agile_resolvers(client, versions, region, period_from, period_to):
         sc_entries.append((
             v_from, v_to,
             fetch_standing_charges(client, "electricity", v.product_code, tariff,
-                                   period_from, period_to),
+                                   period_from, fetch_to),
         ))
     return HalfHourlyRates(by_instant).rate_for, VersionedLookup(sc_entries).rate_for

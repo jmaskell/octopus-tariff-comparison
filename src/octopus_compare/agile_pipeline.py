@@ -55,7 +55,7 @@ def run_agile_comparison(client, config: Config) -> AgileResult:
     flex_rate_for, flex_sc_for = _flex_resolvers(client, flex, region, config)
     versions = resolve_agile_versions(client, config.period_from, config.period_to,
                                       config.agile_product)
-    agile_rate_for, agile_sc_for = agile_resolvers(
+    agile_rate_for, agile_sc_for, agile_rate_map = agile_resolvers(
         client, versions, region, config.period_from, config.period_to)
 
     flex_months = dict(month_slices(daily))

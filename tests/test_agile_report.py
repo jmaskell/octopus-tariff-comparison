@@ -49,6 +49,11 @@ def test_recommend_agile_stay():
     assert recommend_agile(_result("234.64", "286.80")) == "STAY"
 
 
+def test_recommend_agile_marginal():
+    # Agile saves ~2.0% vs Flexible -> MARGINAL (boundary: saving_pct <= 2).
+    assert recommend_agile(_result("240.00", "235.21")) == "MARGINAL"
+
+
 def test_format_agile_text_has_columns_and_insight():
     text = format_agile_text(_result("286.80", "234.64"))
     assert "Agile Comparison" in text and "(electricity only)" in text

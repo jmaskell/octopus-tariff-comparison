@@ -9,6 +9,8 @@ from octopus_compare.tracker import (
     tracker_versions_for_window,
     latest_tracker_version,
     tracker_resolvers,
+    resolve_fixed,
+    fixed_resolvers,
     _version_from_detail,
 )
 
@@ -33,9 +35,25 @@ def _tracker_versions(client, supply, meter, cfg):
     return tracker_versions_for_window(client, meter, cfg.period_from, cfg.period_to)
 
 
-def _supply_breakdown(client, supply, meter, cfg):
-    """Return (region, latest_tracker_version, flex_months, trk_months) where the
-    *_months are {first_of_month: (day_set, SupplyCost)}."""
+def _price_months(supply, kwh, resolvers_by_tariff):
+    """resolvers_by_tariff: {name: (rate_for, sc_for)}.
+    Returns {name: {first_of_month: (day_set, SupplyCost)}}."""
+    out = {name: {} for name in resolvers_by_tariff}
+    for month, sub in month_slices(kwh):
+        days = set(sub)
+        for name, (rate_for, sc_for) in resolvers_by_tariff.items():
+            try:
+                cost = supply_cost(sub, rate_for, sc_for)
+            except KeyError as e:
+                raise PricingError(
+                    f"Couldn't price {supply} ({name}) for every day in the window: {e}. "
+                    "Rates don't cover the full period — try a narrower window with --from/--to."
+                ) from e
+            out[name][month] = (days, cost)
+    return out
+
+
+def _supply_breakdown(client, supply, meter, cfg, fixed_product):
     flex = resolve_flexible(client, meter)
     region = cfg.region or region_letter(flex.tariff_code)
 
@@ -43,65 +61,60 @@ def _supply_breakdown(client, supply, meter, cfg):
                       cfg.period_from, cfg.period_to)
     kwh = to_kwh(raw, supply, cfg.gas_units, cfg.gas_calorific_value)
 
-    flex_rate_for, flex_sc_for = _flexible_resolvers(client, supply, flex, region, cfg)
     versions = _tracker_versions(client, supply, meter, cfg)
     latest = latest_tracker_version(versions)
-    trk_rate_for, trk_sc_for = tracker_resolvers(
-        client, supply, versions, region, cfg.period_from, cfg.period_to)
 
-    flex_months = {}
-    trk_months = {}
-    for month, sub in month_slices(kwh):
-        days = set(sub)
-        try:
-            flex_cost = supply_cost(sub, flex_rate_for, flex_sc_for)
-        except KeyError as e:
-            raise PricingError(
-                f"Couldn't price {supply} for every day in the window: {e}. "
-                "Rates don't cover the full period — try a narrower window with --from/--to."
-            ) from e
-        try:
-            trk_cost = supply_cost(sub, trk_rate_for, trk_sc_for)
-        except KeyError as e:
-            raise PricingError(
-                f"Couldn't price {supply} for every day in the window: {e}. "
-                "Rates don't cover the full period — try a narrower window with --from/--to."
-            ) from e
-        flex_months[month] = (days, flex_cost)
-        trk_months[month] = (days, trk_cost)
-    return region, latest, flex_months, trk_months
+    try:
+        fixed_rate_for, fixed_sc_for = fixed_resolvers(client, supply, fixed_product, region)
+    except KeyError as e:
+        raise PricingError(
+            f"Couldn't read the 12M Fixed rate for {supply}: {e}. "
+            "The fixed product may not publish a rate for its start date."
+        ) from e
+
+    resolvers = {
+        "flexible": _flexible_resolvers(client, supply, flex, region, cfg),
+        "tracker": tracker_resolvers(client, supply, versions, region,
+                                     cfg.period_from, cfg.period_to),
+        "fixed": (fixed_rate_for, fixed_sc_for),
+    }
+    months = _price_months(supply, kwh, resolvers)
+    return region, latest, months["flexible"], months["tracker"], months["fixed"]
+
+
+def _month_total(em, gm, month):
+    e = em.get(month, (set(), None))[1]
+    g = gm.get(month, (set(), None))[1]
+    return (e.total_pounds if e else 0) + (g.total_pounds if g else 0)
 
 
 def run_comparison(client, config: Config) -> ComparisonResult:
     info = parse_account(client.get(f"accounts/{config.account}/"))
+    fixed_product = resolve_fixed(client, config.fixed_product)
 
-    e_region, e_latest, e_flex_m, e_trk_m = _supply_breakdown(
-        client, "electricity", info.electricity, config)
-    _g_region, _g_latest, g_flex_m, g_trk_m = _supply_breakdown(
-        client, "gas", info.gas, config)
+    e_region, e_latest, e_flex, e_trk, e_fix = _supply_breakdown(
+        client, "electricity", info.electricity, config, fixed_product)
+    _g_region, _g_latest, g_flex, g_trk, g_fix = _supply_breakdown(
+        client, "gas", info.gas, config, fixed_product)
 
-    elec_flexible = sum_supply_costs([c for _, c in e_flex_m.values()])
-    elec_tracker = sum_supply_costs([c for _, c in e_trk_m.values()])
-    gas_flexible = sum_supply_costs([c for _, c in g_flex_m.values()])
-    gas_tracker = sum_supply_costs([c for _, c in g_trk_m.values()])
+    def agg(m):
+        return sum_supply_costs([c for _, c in m.values()])
 
-    months = sorted(set(e_flex_m) | set(g_flex_m))
+    months = sorted(set(e_flex) | set(g_flex))
     monthly = []
     for month in months:
-        e_days, e_flex = e_flex_m.get(month, (set(), None))
-        g_days, g_flex = g_flex_m.get(month, (set(), None))
-        _e_days, e_trk = e_trk_m.get(month, (set(), None))
-        _g_days, g_trk = g_trk_m.get(month, (set(), None))
-        flex_pounds = (e_flex.total_pounds if e_flex else 0) + (g_flex.total_pounds if g_flex else 0)
-        trk_pounds = (e_trk.total_pounds if e_trk else 0) + (g_trk.total_pounds if g_trk else 0)
+        e_days, _ = e_flex.get(month, (set(), None))
+        g_days, _ = g_flex.get(month, (set(), None))
         monthly.append(MonthlyRow(
             month=month, days=len(e_days | g_days),
-            flexible_pounds=flex_pounds, tracker_pounds=trk_pounds))
+            flexible_pounds=_month_total(e_flex, g_flex, month),
+            tracker_pounds=_month_total(e_trk, g_trk, month),
+            fixed_pounds=_month_total(e_fix, g_fix, month)))
 
     return ComparisonResult(
         period_from=config.period_from, period_to=config.period_to,
-        region=e_region, tracker=e_latest,
-        elec_flexible=elec_flexible, elec_tracker=elec_tracker,
-        gas_flexible=gas_flexible, gas_tracker=gas_tracker,
+        region=e_region, tracker=e_latest, fixed=fixed_product,
+        elec_flexible=agg(e_flex), elec_tracker=agg(e_trk), elec_fixed=agg(e_fix),
+        gas_flexible=agg(g_flex), gas_tracker=agg(g_trk), gas_fixed=agg(g_fix),
         monthly=monthly,
     )

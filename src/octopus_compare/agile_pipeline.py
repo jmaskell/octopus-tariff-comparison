@@ -93,7 +93,8 @@ def run_agile_comparison(client, config: Config) -> AgileResult:
     insight = compute_insight(hh, agile_rate_for, flex_rate_for, config.peak_window)
     breakdown = compute_breakdown(
         hh, agile_rate_map, insight.flex_effective_p, insight.agile_effective_p,
-        elec_agile.consumption_kwh, config.period_from, config.period_to)
+        elec_agile.consumption_kwh, config.period_from, config.period_to,
+        energy_delta_pounds=elec_flex.energy_pounds - elec_agile.energy_pounds)
 
     daily_days = set(daily)
     hh_local_days = {i.astimezone(_LONDON).date() for i in hh}

@@ -50,7 +50,8 @@ class AgileBreakdown:
 
 def compute_decomposition(period_rates: dict[datetime, Decimal],
                           flex_effective_p: Decimal, agile_effective_p: Decimal,
-                          total_kwh: Decimal) -> Decomposition:
+                          total_kwh: Decimal,
+                          energy_delta_pounds: Decimal) -> Decomposition:
     if period_rates:
         time_avg = (sum(period_rates.values(), Decimal(0)) / len(period_rates)).quantize(Decimal("0.1"))
     else:
@@ -58,8 +59,12 @@ def compute_decomposition(period_rates: dict[datetime, Decimal],
     structural = flex_effective_p - time_avg
     behavioural = time_avg - agile_effective_p
     total = flex_effective_p - agile_effective_p
-    total_pounds = pounds(total * total_kwh)
+    # total_pounds ties to the cost engine's true energy delta (flex.energy_pounds -
+    # agile.energy_pounds) so the report reconciliation is exact: each SupplyCost
+    # component is integer-pence, so energy + standing + VAT == total exactly.
+    total_pounds = energy_delta_pounds
     structural_pounds = pounds(structural * total_kwh)
+    # behavioural is the residual so structural + behavioural == total_pounds exactly.
     behavioural_pounds = total_pounds - structural_pounds
     return Decomposition(
         flex_p=flex_effective_p, time_avg_p=time_avg, load_p=agile_effective_p,
@@ -102,8 +107,10 @@ def compute_hours(halfhourly_kwh: dict[datetime, Decimal],
 def compute_breakdown(halfhourly_kwh: dict[datetime, Decimal],
                       rate_map: dict[datetime, Decimal], flex_effective_p: Decimal,
                       agile_effective_p: Decimal, total_kwh: Decimal,
-                      period_from: date, period_to: date) -> AgileBreakdown:
+                      period_from: date, period_to: date,
+                      energy_delta_pounds: Decimal) -> AgileBreakdown:
     period_rates = _period_rates(rate_map, period_from, period_to)
-    decomp = compute_decomposition(period_rates, flex_effective_p, agile_effective_p, total_kwh)
+    decomp = compute_decomposition(period_rates, flex_effective_p, agile_effective_p,
+                                   total_kwh, energy_delta_pounds)
     by_hour, cheap6, dear6 = compute_hours(halfhourly_kwh, period_rates, total_kwh, decomp.time_avg_p)
     return AgileBreakdown(decomp, by_hour, cheap6, dear6)

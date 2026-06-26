@@ -46,13 +46,6 @@ def main(argv: list[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 3
 
-    if cfg.verbose:
-        print(
-            f"period {cfg.period_from} to {cfg.period_to} | "
-            f"gas_units={cfg.gas_units} calorific_value={cfg.gas_calorific_value}",
-            file=sys.stderr,
-        )
-
     if cfg.command == "agile":
         output = format_agile_json(result) if cfg.output_format == "json" else format_agile_text(result)
     else:

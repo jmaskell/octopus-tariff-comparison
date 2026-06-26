@@ -1,6 +1,7 @@
 from octopus_compare.account import parse_account, region_letter, build_tariff_code
 from octopus_compare.config import Config
-from octopus_compare.consumption import fetch_daily, to_kwh
+from octopus_compare.consumption import fetch_daily, to_kwh, gas_unit_info
+from octopus_compare.coverage import compare_coverage
 from octopus_compare.costing import supply_cost, sum_supply_costs, month_slices
 from octopus_compare.rates import fetch_rates, fetch_standing_charges
 from octopus_compare.report import ComparisonResult, MonthlyRow
@@ -60,6 +61,8 @@ def _supply_breakdown(client, supply, meter, cfg, fixed_product):
     raw = fetch_daily(client, supply, meter.identifier, meter.serials,
                       cfg.period_from, cfg.period_to)
     kwh = to_kwh(raw, supply, cfg.gas_units, cfg.gas_calorific_value)
+    gas_units = (gas_unit_info(raw, cfg.gas_units, cfg.gas_calorific_value)
+                 if supply == "gas" else None)
 
     versions = _tracker_versions(client, supply, meter, cfg)
     latest = latest_tracker_version(versions)
@@ -79,7 +82,8 @@ def _supply_breakdown(client, supply, meter, cfg, fixed_product):
         "fixed": (fixed_rate_for, fixed_sc_for),
     }
     months = _price_months(supply, kwh, resolvers)
-    return region, latest, months["flexible"], months["tracker"], months["fixed"]
+    return (region, latest, versions, gas_units,
+            months["flexible"], months["tracker"], months["fixed"])
 
 
 def _month_total(em, gm, month):
@@ -88,13 +92,22 @@ def _month_total(em, gm, month):
     return (e.total_pounds if e else 0) + (g.total_pounds if g else 0)
 
 
+def _priced_days(month_map) -> set:
+    out = set()
+    for days, _cost in month_map.values():
+        out |= days
+    return out
+
+
 def run_comparison(client, config: Config) -> ComparisonResult:
     info = parse_account(client.get(f"accounts/{config.account}/"))
     fixed_product = resolve_fixed(client, config.fixed_product)
 
-    e_region, e_latest, e_flex, e_trk, e_fix = _supply_breakdown(
+    (e_region, e_latest, e_versions, _e_gas,
+     e_flex, e_trk, e_fix) = _supply_breakdown(
         client, "electricity", info.electricity, config, fixed_product)
-    _g_region, _g_latest, g_flex, g_trk, g_fix = _supply_breakdown(
+    (_g_region, _g_latest, _g_versions, g_gas,
+     g_flex, g_trk, g_fix) = _supply_breakdown(
         client, "gas", info.gas, config, fixed_product)
 
     def agg(m):
@@ -108,13 +121,18 @@ def run_comparison(client, config: Config) -> ComparisonResult:
         monthly.append(MonthlyRow(
             month=month, days=len(e_days | g_days),
             flexible_pounds=_month_total(e_flex, g_flex, month),
-            tracker_pounds=_month_total(e_trk, g_trk, month),
-            fixed_pounds=_month_total(e_fix, g_fix, month)))
+            tracker_pounds=_month_total(e_trk, g_trk, month)))
+
+    coverage = compare_coverage(
+        config.period_from, config.period_to,
+        {"electricity": _priced_days(e_flex), "gas": _priced_days(g_flex)})
 
     return ComparisonResult(
         period_from=config.period_from, period_to=config.period_to,
-        region=e_region, tracker=e_latest, fixed=fixed_product,
+        region=e_region, tracker=e_latest, tracker_versions=e_versions,
+        fixed=fixed_product,
         elec_flexible=agg(e_flex), elec_tracker=agg(e_trk), elec_fixed=agg(e_fix),
         gas_flexible=agg(g_flex), gas_tracker=agg(g_trk), gas_fixed=agg(g_fix),
-        monthly=monthly,
+        monthly=monthly, coverage=coverage, gas_units=g_gas,
+        allow_partial=config.allow_partial_data,
     )

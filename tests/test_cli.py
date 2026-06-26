@@ -48,7 +48,9 @@ def test_main_pricing_error_returns_3(monkeypatch, capsys):
     assert "2026-01-01" in captured.err
 
 
-def test_main_verbose_prints_diagnostics(monkeypatch, capsys):
+def test_main_verbose_flag_accepted(monkeypatch, capsys):
+    # --verbose is still a valid flag; gas unit info now appears in the report body
+    # rather than as a stderr echo, so stderr is empty.
     from datetime import date as _date
     monkeypatch.setattr(cli, "_load_env",
                         lambda: {"OCTOPUS_API_KEY": "sk", "OCTOPUS_ACCOUNT": "A-8F18337C"})
@@ -60,7 +62,8 @@ def test_main_verbose_prints_diagnostics(monkeypatch, capsys):
     code = cli.main(["--from", "2026-04-01", "--to", "2026-04-30", "--verbose"])
     captured = capsys.readouterr()
     assert code == 0
-    assert "period 2026-04-01 to 2026-04-30" in captured.err
+    assert "REPORT-TEXT" in captured.out
+    assert captured.err == ""
 
 
 def test_main_routes_to_agile(monkeypatch, capsys):

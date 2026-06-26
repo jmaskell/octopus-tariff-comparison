@@ -7,24 +7,12 @@ from octopus_compare.agile_breakdown import AgileBreakdown
 from octopus_compare.agile_insight import AgileInsight
 from octopus_compare.costing import SupplyCost
 from octopus_compare.tracker import TrackerVersion, FixedProduct
+from octopus_compare.verdict import Verdict, decide
 
 _MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 _NAMES = {"flexible": "Flexible", "tracker": "Tracker", "fixed": "12M Fixed"}
-
-
-def _month_label(month: date, days: int) -> str:
-    base = f"{_MONTHS[month.month]} {month.year}"
-    return base if days >= 28 else f"{base} ({days} days)"
-
-
-def _cheapest(flexible: Decimal, tracker: Decimal, fixed: Decimal) -> str:
-    # min returns the first minimum -> tie-break order flexible, tracker, fixed.
-    return min(
-        [("flexible", flexible), ("tracker", tracker), ("fixed", fixed)],
-        key=lambda p: p[1],
-    )[0]
 
 
 def _pct(part: Decimal, whole: Decimal) -> Decimal:
@@ -39,11 +27,10 @@ class MonthlyRow:
     days: int
     flexible_pounds: Decimal
     tracker_pounds: Decimal
-    fixed_pounds: Decimal
 
     @property
-    def cheapest(self) -> str:
-        return _cheapest(self.flexible_pounds, self.tracker_pounds, self.fixed_pounds)
+    def verdict(self) -> Verdict:
+        return decide(self.flexible_pounds, self.tracker_pounds)
 
 
 @dataclass
@@ -52,6 +39,7 @@ class ComparisonResult:
     period_to: date
     region: str
     tracker: TrackerVersion
+    tracker_versions: list
     fixed: FixedProduct
     elec_flexible: SupplyCost
     elec_tracker: SupplyCost
@@ -60,6 +48,9 @@ class ComparisonResult:
     gas_tracker: SupplyCost
     gas_fixed: SupplyCost
     monthly: list
+    coverage: object
+    gas_units: object
+    allow_partial: bool = False
 
     @property
     def flexible_total(self) -> Decimal:
@@ -73,28 +64,60 @@ class ComparisonResult:
     def fixed_total(self) -> Decimal:
         return self.elec_fixed.total_pounds + self.gas_fixed.total_pounds
 
-    @property
-    def cheapest(self) -> str:
-        return _cheapest(self.flexible_total, self.tracker_total, self.fixed_total)
+
+def recommend(result: ComparisonResult) -> Verdict:
+    """Backtest verdict: Flexible (status quo) vs Tracker, same time basis."""
+    return decide(result.flexible_total, result.tracker_total)
 
 
-def recommend(result: ComparisonResult, threshold_pct: Decimal = Decimal("2")) -> str:
-    cheapest = result.cheapest
-    if cheapest == "flexible":
-        return "STAY"
-    best = {"tracker": result.tracker_total, "fixed": result.fixed_total}[cheapest]
-    saving_pct = _pct(result.flexible_total - best, result.flexible_total)
-    return "MARGINAL" if saving_pct <= threshold_pct else "SWITCH"
+def fixed_verdict(result: ComparisonResult) -> Verdict:
+    """Forward check: today's Fixed rate on this usage vs the Flexible backtest."""
+    return decide(result.flexible_total, result.fixed_total)
 
 
-def _block(label, flexible, tracker, fixed) -> list[str]:
+def verdict_suppressed(result: ComparisonResult) -> bool:
+    if result.allow_partial:
+        return False
+    gas_ok = result.gas_units is None or result.gas_units.confident
+    return not (result.coverage.complete and gas_ok)
+
+
+def _coverage_lines(result: ComparisonResult) -> list[str]:
+    parts = " · ".join(
+        f"{s.supply} {s.priced_days}/{s.expected_days} days"
+        for s in result.coverage.per_supply
+    )
+    lines = [f"Coverage:  {parts}"]
+    for s in result.coverage.per_supply:
+        if s.missing_months:
+            months = ", ".join(f"{m:%b %Y}" for m in s.missing_months)
+            lines.append(f"  ⚠ {s.supply}: missing days in {months}")
+    for note in result.coverage.notes:
+        lines.append(f"  ⚠ {note}")
+    return lines
+
+
+def _gas_units_line(result: ComparisonResult) -> str:
+    gi = result.gas_units
+    if gi is None:
+        return "Gas units: n/a"
+    if gi.resolved == "m3":
+        how = f"×{gi.factor.quantize(Decimal('0.01'))} kWh/m³"
+    else:
+        how = "no conversion"
+    src = gi.requested if gi.requested in ("m3", "kwh") else "auto-detected"
+    flag = "" if gi.confident else "  ⚠ ambiguous — pass --gas-units to be sure"
+    return f"Gas units: {gi.resolved} ({src}, {how}){flag}"
+
+
+def _block2(label, flexible, tracker) -> list[str]:
     return [
-        f"{label:<14}          Flexible      Tracker        Fixed",
-        f"  consumption        {flexible.consumption_kwh} kWh   {tracker.consumption_kwh} kWh   {fixed.consumption_kwh} kWh",
-        f"  energy (excl VAT)  £{flexible.energy_pounds}   £{tracker.energy_pounds}   £{fixed.energy_pounds}",
-        f"  standing charge    £{flexible.standing_pounds}   £{tracker.standing_pounds}   £{fixed.standing_pounds}",
-        f"  VAT (5%)           £{flexible.vat_pounds}   £{tracker.vat_pounds}   £{fixed.vat_pounds}",
-        f"  total              £{flexible.total_pounds}   £{tracker.total_pounds}   £{fixed.total_pounds}",
+        f"{label:<14}          Flexible      Tracker",
+        f"  consumption        {flexible.consumption_kwh} kWh   {tracker.consumption_kwh} kWh",
+        f"  energy (excl VAT)  £{flexible.energy_pounds}   £{tracker.energy_pounds}",
+        f"  standing charge    £{flexible.standing_pounds}   £{tracker.standing_pounds}",
+        f"  VAT (5%)           £{flexible.vat_pounds}   £{tracker.vat_pounds}",
+        f"  total              £{flexible.total_pounds}   £{tracker.total_pounds}",
         "",
     ]
 
@@ -103,61 +126,92 @@ def _cell(value: Decimal, mark: bool) -> str:
     return f"£{value}" + (" ✓" if mark else "")
 
 
-def _recommendation_lines(result: ComparisonResult) -> list[str]:
-    cheapest = result.cheapest
-    if cheapest == "flexible":
-        return ["→ STAY on Flexible — cheapest over this period."]
-    totals = {"tracker": result.tracker_total, "fixed": result.fixed_total}
-    best = totals[cheapest]
-    saving = result.flexible_total - best
-    pct = _pct(saving, result.flexible_total)
-    name = _NAMES[cheapest].upper()
-    if recommend(result) == "MARGINAL":
-        head = (f"→ Cheapest over this period: {name} — £{best}, but only {pct}% "
-                f"(£{saving}) under Flexible — MARGINAL, your call.")
+def _month_label(month: date, days: int) -> str:
+    base = f"{_MONTHS[month.month]} {month.year}"
+    return base if days >= 28 else f"{base} ({days} days)"
+
+
+def _backtest_verdict_lines(result: ComparisonResult) -> list[str]:
+    if verdict_suppressed(result):
+        return ["→ NO RECOMMENDATION — data incomplete/ambiguous (see Coverage below); "
+                "narrow the window with --from/--to or pass --allow-partial-data."]
+    v = recommend(result)
+    saving = result.flexible_total - result.tracker_total
+    pct = _pct(abs(saving), result.flexible_total)
+    if v == Verdict.STAY:
+        return [f"→ STAY on Flexible — £{abs(saving)} ({pct}%) cheaper than Tracker "
+                "over this period."]
+    if v == Verdict.SWITCH:
+        return [f"→ SWITCH to Tracker — £{saving} ({pct}%) cheaper than Flexible "
+                "over this period (historical backtest)."]
+    return ["→ Flexible and Tracker are effectively tied over this period "
+            f"(within £{abs(saving)} / {pct}%) — decide on price stability, not the number."]
+
+
+def _forward_lock_in_lines(result: ComparisonResult) -> list[str]:
+    f = result.fixed
+    delta = result.flexible_total - result.fixed_total  # >0 => fixed cheaper
+    pct = _pct(abs(delta), result.flexible_total)
+    sign = "−" if delta > 0 else "+"
+    head = [
+        f'  {f.product_code} · "{f.display_name}"',
+        f"  12M Fixed on this usage:  £{result.fixed_total}   "
+        f"(vs your £{result.flexible_total} Flexible backtest: {sign}£{abs(delta)}, {sign}{pct}%)",
+        "  Note: today's locked rate applied flat — NOT what was offered during this period.",
+    ]
+    if verdict_suppressed(result):
+        return head + ["  → NO RECOMMENDATION — data incomplete/ambiguous."]
+    v = fixed_verdict(result)
+    if v == Verdict.SWITCH:
+        head.append("  → Locking Fixed now would have undercut Flexible here — but past ≠ future.")
+    elif v == Verdict.STAY:
+        head.append("  → Locking Fixed now would have cost more than Flexible here.")
     else:
-        head = (f"→ Cheapest over this period: {name} — £{best}, {pct}% "
-                f"(£{saving}) less than Flexible.")
-    runner = "fixed" if cheapest == "tracker" else "tracker"
-    ru_saving = result.flexible_total - totals[runner]
-    ru_pct = _pct(abs(ru_saving), result.flexible_total)
-    verb = "save" if ru_saving > 0 else "cost"
-    return [head, f"  ({_NAMES[runner]} would {verb} {ru_pct}% / £{abs(ru_saving)} vs Flexible.)"]
+        head.append("  → Fixed and Flexible are effectively tied here — but past ≠ future.")
+    return head
 
 
 def format_text(result: ComparisonResult) -> str:
-    t, f = result.tracker, result.fixed
+    codes = ", ".join(v.product_code for v in result.tracker_versions)
     lines = [
         f"Octopus Tariff Comparison · {result.period_from} – {result.period_to} · Region {result.region}",
-        "Flexible, Tracker and 12M Fixed, costed on your actual usage — all pure what-ifs:",
-        f"  Tracker (switch-now): {t.product_code} · \"{t.display_name}\" · current since {t.available_from}",
-        f"  Fixed (12M lock-in):  {f.product_code} · \"{f.display_name}\" · today's locked rate, flat",
+        "",
+        "HISTORICAL BACKTEST — what you'd have paid (Flexible vs Tracker, same basis)",
+        f"  Tracker — historical versions used: {codes}",
         "",
     ]
-    lines += _block("Electricity", result.elec_flexible, result.elec_tracker, result.elec_fixed)
-    lines += _block("Gas", result.gas_flexible, result.gas_tracker, result.gas_fixed)
-    lines.append("By month (elec + gas)  Flexible        Tracker         Fixed")
+    lines += _block2("Electricity", result.elec_flexible, result.elec_tracker)
+    lines += _block2("Gas", result.gas_flexible, result.gas_tracker)
+    lines.append("By month (elec + gas)  Flexible        Tracker")
     for row in result.monthly:
-        c = row.cheapest
+        v = row.verdict
+        flex_win = v == Verdict.STAY
+        trk_win = v == Verdict.SWITCH
         lines.append(
             f"  {_month_label(row.month, row.days):<20} "
-            f"{_cell(row.flexible_pounds, c == 'flexible'):<14} "
-            f"{_cell(row.tracker_pounds, c == 'tracker'):<14} "
-            f"{_cell(row.fixed_pounds, c == 'fixed')}"
+            f"{_cell(row.flexible_pounds, flex_win):<14} "
+            f"{_cell(row.tracker_pounds, trk_win)}"
         )
-    c = result.cheapest
+    tv = recommend(result)
     lines.append(
         f"  {'Total':<20} "
-        f"{_cell(result.flexible_total, c == 'flexible'):<14} "
-        f"{_cell(result.tracker_total, c == 'tracker'):<14} "
-        f"{_cell(result.fixed_total, c == 'fixed')}"
+        f"{_cell(result.flexible_total, tv == Verdict.STAY):<14} "
+        f"{_cell(result.tracker_total, tv == Verdict.SWITCH)}"
     )
     lines.append("")
-    lines += _recommendation_lines(result)
+    lines += _backtest_verdict_lines(result)
+    lines += [
+        "",
+        "FORWARD LOCK-IN CHECK — today's 12M Fixed rate on this usage (NOT a backtest)",
+    ]
+    lines += _forward_lock_in_lines(result)
+    lines.append("")
+    lines += _coverage_lines(result)
+    lines.append(_gas_units_line(result))
     lines.append(
-        "Figures are API-derived estimates incl. VAT, not your exact bill; Tracker prices "
-        "change daily and fixed/tracker rates change between sign-ups, so past savings "
-        "don't guarantee future ones."
+        "Figures are API-derived estimates incl. VAT, not your exact bill. Flexible/Tracker "
+        "are historical; Fixed is today's rate on past usage. Past savings don't guarantee "
+        "future ones."
     )
     return "\n".join(lines)
 
@@ -174,7 +228,21 @@ def _supply_json(flexible, tracker, fixed) -> dict:
     return {"flexible": one(flexible), "tracker": one(tracker), "fixed": one(fixed)}
 
 
+def _coverage_json(result: ComparisonResult) -> dict:
+    return {
+        "complete": result.coverage.complete,
+        "per_supply": [
+            {"supply": s.supply, "priced_days": s.priced_days,
+             "expected_days": s.expected_days,
+             "missing_months": [str(m) for m in s.missing_months]}
+            for s in result.coverage.per_supply
+        ],
+        "notes": result.coverage.notes,
+    }
+
+
 def format_json(result: ComparisonResult) -> str:
+    gi = result.gas_units
     return json.dumps(
         {
             "period_from": str(result.period_from),
@@ -184,6 +252,7 @@ def format_json(result: ComparisonResult) -> str:
                 "product_code": result.tracker.product_code,
                 "display_name": result.tracker.display_name,
                 "available_from": str(result.tracker.available_from),
+                "versions_used": [v.product_code for v in result.tracker_versions],
             },
             "fixed": {
                 "product_code": result.fixed.product_code,
@@ -193,21 +262,27 @@ def format_json(result: ComparisonResult) -> str:
             "electricity": _supply_json(result.elec_flexible, result.elec_tracker, result.elec_fixed),
             "gas": _supply_json(result.gas_flexible, result.gas_tracker, result.gas_fixed),
             "monthly": [
-                {
-                    "month": str(row.month),
-                    "days": row.days,
-                    "flexible": str(row.flexible_pounds),
-                    "tracker": str(row.tracker_pounds),
-                    "fixed": str(row.fixed_pounds),
-                    "cheapest": row.cheapest,
-                }
+                {"month": str(row.month), "days": row.days,
+                 "flexible": str(row.flexible_pounds), "tracker": str(row.tracker_pounds),
+                 "verdict": row.verdict.value}
                 for row in result.monthly
             ],
             "flexible_total": str(result.flexible_total),
             "tracker_total": str(result.tracker_total),
-            "fixed_total": str(result.fixed_total),
-            "cheapest": result.cheapest,
-            "recommendation": recommend(result),
+            "backtest": {"recommendation": recommend(result).value},
+            "forward_lock_in": {
+                "fixed_total": str(result.fixed_total),
+                "delta_vs_flexible_pounds": str(result.flexible_total - result.fixed_total),
+                "delta_pct": str(_pct(abs(result.flexible_total - result.fixed_total),
+                                      result.flexible_total)),
+                "verdict": fixed_verdict(result).value,
+            },
+            "verdict_suppressed": verdict_suppressed(result),
+            "coverage": _coverage_json(result),
+            "gas_units": (None if gi is None else
+                          {"requested": gi.requested, "resolved": gi.resolved,
+                           "confident": gi.confident,
+                           "factor": (None if gi.factor is None else str(gi.factor))}),
         },
         indent=2,
     )

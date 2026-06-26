@@ -88,7 +88,9 @@ def test_compute_breakdown_integrates():
 
 
 def test_pound_components_reconcile_exactly():
-    rates = {datetime(2026, 1, 1, h, tzinfo=UTC): Decimal("20") for h in range(5)}
-    d = compute_decomposition(rates, Decimal("25.3"), Decimal("18.7"),
-                              Decimal("1234.5"))
+    # structural=0.5p and behavioural=0.5p each round to £0.01 independently;
+    # the old non-residual code summed to £0.02 ≠ total £0.01. The residual
+    # derivation (behavioural = total - structural) keeps the sum exact.
+    rates = {datetime(2026, 1, 1, tzinfo=UTC): Decimal("19.5")}
+    d = compute_decomposition(rates, Decimal("20"), Decimal("19"), Decimal("1"))
     assert d.structural_pounds + d.behavioural_pounds == d.total_pounds

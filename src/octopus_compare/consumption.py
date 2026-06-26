@@ -1,11 +1,23 @@
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from octopus_compare.units import m3_to_kwh
+from octopus_compare.units import m3_to_kwh, VOLUME_CORRECTION
 
 LONDON = ZoneInfo("Europe/London")
 UTC = ZoneInfo("UTC")
+
+GAS_AMBIGUOUS_LOW = Decimal("4")
+GAS_AMBIGUOUS_HIGH = Decimal("25")
+
+
+@dataclass
+class GasUnitInfo:
+    requested: str
+    resolved: str
+    confident: bool
+    factor: Decimal | None  # kWh per m3 when converting, else None
 
 
 def _local_date(value: str) -> date:
@@ -70,19 +82,33 @@ def fetch_halfhourly(client, identifier, serials, period_from, period_to):
     return half
 
 
-def _resolve_gas_units(raw: dict[date, Decimal], gas_units: str) -> str:
+def _resolve_gas_units(raw: dict[date, Decimal], gas_units: str) -> tuple[str, bool]:
     if gas_units in ("m3", "kwh"):
-        return gas_units
+        return gas_units, True
     if not raw:
-        return "m3"
+        return "m3", False
     mean = sum(raw.values(), Decimal(0)) / len(raw)
-    return "kwh" if mean > 15 else "m3"
+    unit = "kwh" if mean > 15 else "m3"
+    confident = not (GAS_AMBIGUOUS_LOW <= mean < GAS_AMBIGUOUS_HIGH)
+    return unit, confident
+
+
+def gas_unit_info(
+    raw: dict[date, Decimal], gas_units: str, calorific_value: Decimal
+) -> GasUnitInfo:
+    resolved, confident = _resolve_gas_units(raw, gas_units)
+    factor = (
+        VOLUME_CORRECTION * Decimal(calorific_value) / Decimal("3.6")
+        if resolved == "m3"
+        else None
+    )
+    return GasUnitInfo(gas_units, resolved, confident, factor)
 
 
 def to_kwh(raw, supply, gas_units, calorific_value):
     if supply == "electricity":
         return raw
-    resolved = _resolve_gas_units(raw, gas_units)
+    resolved, _ = _resolve_gas_units(raw, gas_units)
     if resolved == "kwh":
         return raw
     return {d: m3_to_kwh(v, calorific_value) for d, v in raw.items()}

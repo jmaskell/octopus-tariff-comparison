@@ -2,7 +2,14 @@ from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from octopus_compare.consumption import fetch_daily, fetch_halfhourly, to_kwh
+from octopus_compare.consumption import (
+    _resolve_gas_units,
+    fetch_daily,
+    fetch_halfhourly,
+    gas_unit_info,
+    GasUnitInfo,
+    to_kwh,
+)
 from tests.fixtures.api_samples import ELEC_CONSUMPTION_KWH, HH_CONSUMPTION
 
 _UTC = ZoneInfo("UTC")
@@ -91,3 +98,45 @@ def test_fetch_halfhourly_sums_across_meters():
     half = fetch_halfhourly(MultiMeterClient(), "1200033187430", ["OLD", "NEW"],
                             date(2026, 3, 1), date(2026, 3, 2))
     assert half[datetime(2026, 3, 1, 0, 0, tzinfo=_UTC)] == Decimal("0.20")
+
+
+# Task 3: Gas-unit confidence tests
+def _raw(mean):
+    # 10 days all equal to `mean`
+    return {date(2026, 1, d): Decimal(str(mean)) for d in range(1, 11)}
+
+
+def test_explicit_units_are_confident():
+    assert _resolve_gas_units(_raw(8), "m3") == ("m3", True)
+    assert _resolve_gas_units(_raw(8), "kwh") == ("kwh", True)
+
+
+def test_auto_high_mean_is_confident_kwh():
+    assert _resolve_gas_units(_raw(40), "auto") == ("kwh", True)
+
+
+def test_auto_low_mean_is_confident_m3():
+    assert _resolve_gas_units(_raw(2), "auto") == ("m3", True)
+
+
+def test_auto_ambiguous_band_is_not_confident():
+    unit, confident = _resolve_gas_units(_raw(8), "auto")
+    assert confident is False  # 8 is in [4, 25)
+
+
+def test_auto_empty_is_not_confident():
+    assert _resolve_gas_units({}, "auto") == ("m3", False)
+
+
+def test_gas_unit_info_reports_factor_for_m3():
+    info = gas_unit_info(_raw(2), "auto", Decimal("39.5"))
+    assert info == GasUnitInfo(
+        requested="auto", resolved="m3", confident=True,
+        factor=(Decimal("1.02264") * Decimal("39.5") / Decimal("3.6")),
+    )
+
+
+def test_gas_unit_info_no_factor_for_kwh():
+    info = gas_unit_info(_raw(40), "auto", Decimal("39.5"))
+    assert info.resolved == "kwh"
+    assert info.factor is None

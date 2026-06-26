@@ -100,3 +100,41 @@ class NoHalfHourlyClient(AgileFakeClient):
 def test_run_agile_no_halfhourly_data_raises():
     with pytest.raises(PricingError):
         run_agile_comparison(NoHalfHourlyClient(), _config())
+
+
+def test_run_agile_totals_aggregate_per_month_across_boundary():
+    """Two months, each with a 50p Flexible/Agile subtotal: per-month VAT rounds
+    to 3p each (6p) but a whole-window rounding would give 5p. The top-line
+    totals must equal the sum of the monthly rows (and match the main report's
+    per-month aggregation), not a whole-window rounding."""
+    days = ["2026-03-15", "2026-04-15"]
+
+    class TwoMonthClient:
+        def get(self, path, params=None):
+            if path == "accounts/A-8F18337C/":
+                return ACCOUNT_AGILE
+            if path == "products/VAR-22-11-01/":
+                return {"is_tracker": False}
+            raise AssertionError(path)
+
+        def get_results(self, path, params=None):
+            if path == "products/":
+                return AGILE_PRODUCTS_LIST
+            if "consumption" in path:
+                return [{"consumption": 1.0, "interval_start": f"{d}T00:00:00Z",
+                         "interval_end": f"{d}T00:30:00Z"} for d in days]
+            if "standing-charges" in path:
+                return [{"value_exc_vat": 30.0, "valid_from": None, "valid_to": None}]
+            if "AGILE" in path:
+                return [{"value_exc_vat": 20.0, "valid_from": f"{d}T00:00:00Z",
+                         "valid_to": f"{d}T00:30:00Z"} for d in days]
+            return [{"value_exc_vat": 20.0, "valid_from": None, "valid_to": None}]
+
+    cfg = _config(period_from=date(2026, 3, 1), period_to=date(2026, 5, 1))
+    result = run_agile_comparison(TwoMonthClient(), cfg)
+    assert len(result.monthly) == 2
+    # rows foot to the Total (the bug made the whole-window total £1.05 vs rows £1.06)
+    assert sum(r.flexible_pounds for r in result.monthly) == result.flexible_total
+    assert sum(r.agile_pounds for r in result.monthly) == result.agile_total
+    assert result.flexible_total == Decimal("1.06")
+    assert result.agile_total == Decimal("1.06")

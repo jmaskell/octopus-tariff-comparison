@@ -8,7 +8,7 @@ from octopus_compare.agile_costing import agile_supply_cost
 from octopus_compare.agile_insight import compute_insight
 from octopus_compare.config import Config
 from octopus_compare.consumption import fetch_daily, fetch_halfhourly
-from octopus_compare.costing import supply_cost, month_slices
+from octopus_compare.costing import supply_cost, month_slices, sum_supply_costs
 from octopus_compare.pipeline import PricingError
 from octopus_compare.rates import fetch_rates, fetch_standing_charges
 from octopus_compare.report import AgileResult, AgileMonthlyRow
@@ -58,27 +58,35 @@ def run_agile_comparison(client, config: Config) -> AgileResult:
     agile_rate_for, agile_sc_for = agile_resolvers(
         client, versions, region, config.period_from, config.period_to)
 
+    flex_months = dict(month_slices(daily))
+    agile_months = _halfhourly_months(hh)
     try:
-        elec_flex = supply_cost(daily, flex_rate_for, flex_sc_for)
-        elec_agile = agile_supply_cost(hh, agile_rate_for, agile_sc_for)
-        flex_months = {m: sub for m, sub in month_slices(daily)}
-        agile_months = _halfhourly_months(hh)
-        monthly = []
-        for month in sorted(set(flex_months) | set(agile_months)):
-            f_slice = flex_months.get(month, {})
-            a_slice = agile_months.get(month, {})
-            days = len(set(f_slice) | {i.astimezone(_LONDON).date() for i in a_slice})
-            f_cost = supply_cost(f_slice, flex_rate_for, flex_sc_for) if f_slice else None
-            a_cost = agile_supply_cost(a_slice, agile_rate_for, agile_sc_for) if a_slice else None
-            monthly.append(AgileMonthlyRow(
-                month=month, days=days,
-                flexible_pounds=f_cost.total_pounds if f_cost else Decimal(0),
-                agile_pounds=a_cost.total_pounds if a_cost else Decimal(0)))
+        flex_costs = {m: supply_cost(sub, flex_rate_for, flex_sc_for)
+                      for m, sub in flex_months.items()}
+        agile_costs = {m: agile_supply_cost(sub, agile_rate_for, agile_sc_for)
+                       for m, sub in agile_months.items()}
     except KeyError as e:
         raise PricingError(
             f"Couldn't price every half-hour on Agile: {e}. Rates don't cover the "
             "full period — try a narrower window with --from/--to."
         ) from e
+
+    # Top-line totals aggregate the per-month costs (one rounding per month),
+    # exactly as run_comparison's agg does — so the Flexible total matches the
+    # main 3-column report to the penny and the monthly rows sum to the Total.
+    elec_flex = sum_supply_costs(list(flex_costs.values()))
+    elec_agile = sum_supply_costs(list(agile_costs.values()))
+
+    monthly = []
+    for month in sorted(set(flex_months) | set(agile_months)):
+        f_cost = flex_costs.get(month)
+        a_cost = agile_costs.get(month)
+        days = len(set(flex_months.get(month, {}))
+                   | {i.astimezone(_LONDON).date() for i in agile_months.get(month, {})})
+        monthly.append(AgileMonthlyRow(
+            month=month, days=days,
+            flexible_pounds=f_cost.total_pounds if f_cost else Decimal(0),
+            agile_pounds=a_cost.total_pounds if a_cost else Decimal(0)))
 
     insight = compute_insight(hh, agile_rate_for, flex_rate_for, config.peak_window)
 

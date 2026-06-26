@@ -129,6 +129,19 @@ def _rows(values):
 ELEC_TWO_MONTH = _rows({"2026-03-30": 9.0, "2026-03-31": 9.0, "2026-04-01": 9.0})
 GAS_TWO_MONTH = _rows({"2026-03-30": 30.0, "2026-03-31": 30.0, "2026-04-01": 30.0})
 
+# Listing payload for resolve_agile_versions (GET /products/?brand=OCTOPUS_ENERGY).
+AGILE_PRODUCTS_LIST = [
+    {"code": "AGILE-24-10-01", "full_name": "Agile Octopus October 2024 v1",
+     "display_name": "Agile Octopus",
+     "available_from": "2024-10-01T00:00:00+01:00", "available_to": None},
+    {"code": "AGILE-23-12-06", "full_name": "Agile Octopus December 2023 v1",
+     "display_name": "Agile Octopus",
+     "available_from": "2023-12-06T00:00:00Z", "available_to": "2024-10-01T00:00:00+01:00"},
+    {"code": "OE-FIX-12M-26-06-24", "full_name": "Octopus 12M Fixed June 2026 v5",
+     "display_name": "Octopus 12M Fixed",
+     "available_from": "2026-06-24T00:00:00+01:00", "available_to": None},
+]
+
 # Listing payload for resolve_fixed (GET /products/?brand=OCTOPUS_ENERGY).
 FIXED_PRODUCTS_LIST = [
     {"code": "OE-FIX-12M-26-06-24", "full_name": "Octopus 12M Fixed June 2026 v5",

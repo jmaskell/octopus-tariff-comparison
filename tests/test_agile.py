@@ -96,11 +96,13 @@ class AgileRateClient:
 
 def test_agile_resolvers_single_version():
     v = AgileVersion("AGILE-24-10-01", "Agile Octopus", date(2024, 10, 1), None)
-    rate_for, sc_for = agile_resolvers(
+    rate_for, sc_for, rate_map = agile_resolvers(
         AgileRateClient(), [v], "C", date(2026, 3, 1), date(2026, 3, 2))
     assert rate_for(datetime(2026, 3, 1, 16, 0, tzinfo=_UTC)) == Decimal("21.0")
     assert rate_for(datetime(2026, 3, 1, 13, 30, tzinfo=_UTC)) == Decimal("-2.0")
     assert sc_for(date(2026, 3, 1)) == Decimal("45.0")
+    # the merged rate map is returned for analytics
+    assert rate_map[datetime(2026, 3, 1, 16, 0, tzinfo=_UTC)] == Decimal("21.0")
 
 
 def test_agile_resolvers_merges_versions():
@@ -125,11 +127,13 @@ def test_agile_resolvers_merges_versions():
                      "valid_from": "2024-11-15T00:00:00Z",
                      "valid_to": "2024-11-15T00:30:00Z"}]
 
-    rate_for, sc_for = agile_resolvers(
+    rate_for, sc_for, rate_map = agile_resolvers(
         TwoVersionClient(), [v1, v2], "C", date(2024, 1, 1), date(2024, 12, 1))
-    # rates from BOTH versions are present in the merged lookup
+    # rates from BOTH versions are present in the merged lookup AND the rate map
     assert rate_for(datetime(2024, 1, 15, 0, 0, tzinfo=_UTC)) == Decimal("12.0")
     assert rate_for(datetime(2024, 11, 15, 0, 0, tzinfo=_UTC)) == Decimal("25.0")
+    assert rate_map[datetime(2024, 1, 15, 0, 0, tzinfo=_UTC)] == Decimal("12.0")
+    assert rate_map[datetime(2024, 11, 15, 0, 0, tzinfo=_UTC)] == Decimal("25.0")
     # standing charge selected per version by date
     assert sc_for(date(2024, 1, 15)) == Decimal("30.0")
     assert sc_for(date(2024, 11, 15)) == Decimal("45.0")
@@ -175,6 +179,6 @@ def test_agile_resolvers_cover_period_to_boundary_instant():
             return rows
 
     v = AgileVersion("AGILE-24-10-01", "Agile Octopus", date(2024, 10, 1), None)
-    rate_for, _sc = agile_resolvers(
+    rate_for, _sc, _map = agile_resolvers(
         BoundaryAwareClient(), [v], "C", date(2026, 5, 28), date(2026, 5, 30))
     assert rate_for(boundary) == Decimal("12.0")

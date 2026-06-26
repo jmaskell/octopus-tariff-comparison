@@ -102,6 +102,13 @@ def test_run_agile_no_halfhourly_data_raises():
         run_agile_comparison(NoHalfHourlyClient(), _config())
 
 
+def test_run_agile_comparison_populates_breakdown():
+    result = run_agile_comparison(AgileFakeClient(), _config())
+    b = result.breakdown
+    assert len(b.by_hour) == 24
+    assert b.decomposition.structural_p + b.decomposition.behavioural_p == b.decomposition.total_p
+
+
 def test_run_agile_totals_aggregate_per_month_across_boundary():
     """Two months, each with a 50p Flexible/Agile subtotal: per-month VAT rounds
     to 3p each (6p) but a whole-window rounding would give 5p. The top-line

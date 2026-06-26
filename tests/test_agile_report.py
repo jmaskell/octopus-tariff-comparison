@@ -4,6 +4,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from octopus_compare.agile import AgileVersion
+from octopus_compare.agile_breakdown import AgileBreakdown, Decomposition, HourBucket
 from octopus_compare.agile_insight import AgileInsight, HalfHourStat
 from octopus_compare.costing import SupplyCost
 from octopus_compare.report import (
@@ -30,6 +31,19 @@ def _insight():
         negative_count=37)
 
 
+def _breakdown(structural="7.1", behavioural="-1.3", total="5.8"):
+    decomp = Decomposition(
+        flex_p=Decimal("24.0"), time_avg_p=Decimal("16.9"), load_p=Decimal("18.2"),
+        structural_p=Decimal(structural), behavioural_p=Decimal(behavioural),
+        total_p=Decimal(total),
+        structural_pounds=Decimal("43.85"), behavioural_pounds=Decimal("-7.89"),
+        total_pounds=Decimal("35.95"), total_kwh=Decimal("622"))
+    hours = [HourBucket(h, Decimal("4.0"), Decimal("15.0"), None) for h in range(24)]
+    hours[14] = HourBucket(14, Decimal("4.8"), Decimal("10.2"), "cheap")
+    hours[18] = HourBucket(18, Decimal("9.4"), Decimal("32.5"), "dear")
+    return AgileBreakdown(decomp, hours, Decimal("29.0"), Decimal("41.0"))
+
+
 def _result(flex_total, agile_total):
     v = AgileVersion("AGILE-24-10-01", "Agile Octopus", date(2024, 10, 1), None)
     return AgileResult(
@@ -38,7 +52,8 @@ def _result(flex_total, agile_total):
         elec_flexible=_cost(flex_total), elec_agile=_cost(agile_total),
         monthly=[AgileMonthlyRow(date(2026, 1, 1), 31,
                                  Decimal(flex_total), Decimal(agile_total))],
-        insight=_insight())
+        insight=_insight(),
+        breakdown=_breakdown())
 
 
 def test_recommend_agile_switch():
@@ -72,3 +87,33 @@ def test_format_agile_json_shape():
     assert data["insight"]["agile_effective_p"] == "18.4"
     assert data["recommendation"] == "SWITCH"
     assert data["agile_versions"][0]["product_code"] == "AGILE-24-10-01"
+
+
+def test_format_agile_text_has_decomposition_cheaper():
+    text = format_agile_text(_result("286.80", "234.64"))
+    assert "Why Agile is cheaper" in text
+    assert "Agile if you used power evenly" in text
+    assert "Structural (Agile cheaper on average)" in text
+    assert "Net saving" in text
+    assert "-£7.89" in text                 # minus before the £
+    assert "Hour-of-day (London)" in text
+    assert "Usage in 6 cheapest hours: 29.0%" in text
+
+
+def test_format_agile_text_decomposition_inverse():
+    res = _result("234.64", "286.80")       # Agile dearer overall
+    res.breakdown = _breakdown(structural="-4.0", behavioural="-2.0", total="-6.0")
+    text = format_agile_text(res)
+    assert "Why Agile is more expensive" in text
+    assert "Agile dearer on average" in text
+    assert "you use at dearer times" in text
+    assert "Net extra cost" in text
+
+
+def test_format_agile_json_has_breakdown():
+    data = json.loads(format_agile_json(_result("286.80", "234.64")))
+    assert data["breakdown"]["decomposition"]["structural_p"] == "7.1"
+    assert data["breakdown"]["decomposition"]["total_pounds"] == "35.95"
+    assert len(data["breakdown"]["by_hour"]) == 24
+    assert data["breakdown"]["by_hour"][18]["marker"] == "dear"
+    assert data["breakdown"]["cheapest6_usage_pct"] == "29.0"

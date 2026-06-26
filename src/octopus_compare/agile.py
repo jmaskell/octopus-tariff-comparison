@@ -92,7 +92,7 @@ def _iso(d: date) -> str:
 
 
 def agile_resolvers(client, versions, region, period_from, period_to):
-    """(rate_for, sc_for) for the Agile column. Half-hourly unit rates from every
+    """(rate_for, sc_for, rate_map) for the Agile column. Half-hourly unit rates from every
     version are merged into one instant-keyed lookup (version windows never
     overlap). Standing charges are daily and version-selected via VersionedLookup,
     mirroring tracker_resolvers."""
@@ -118,4 +118,4 @@ def agile_resolvers(client, versions, region, period_from, period_to):
             fetch_standing_charges(client, "electricity", v.product_code, tariff,
                                    period_from, fetch_to),
         ))
-    return HalfHourlyRates(by_instant).rate_for, VersionedLookup(sc_entries).rate_for
+    return HalfHourlyRates(by_instant).rate_for, VersionedLookup(sc_entries).rate_for, by_instant

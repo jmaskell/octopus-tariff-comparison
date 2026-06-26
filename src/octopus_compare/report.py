@@ -315,6 +315,8 @@ class AgileResult:
     monthly: list
     insight: AgileInsight
     breakdown: AgileBreakdown
+    coverage: object
+    allow_partial: bool = False
 
     @property
     def flexible_total(self) -> Decimal:
@@ -324,16 +326,15 @@ class AgileResult:
     def agile_total(self) -> Decimal:
         return self.elec_agile.total_pounds
 
-    @property
-    def cheapest(self) -> str:
-        return "flexible" if self.flexible_total <= self.agile_total else "agile"
+
+def recommend_agile(result: AgileResult) -> Verdict:
+    return decide(result.flexible_total, result.agile_total)
 
 
-def recommend_agile(result: AgileResult, threshold_pct: Decimal = Decimal("2")) -> str:
-    if result.cheapest == "flexible":
-        return "STAY"
-    saving_pct = _pct(result.flexible_total - result.agile_total, result.flexible_total)
-    return "MARGINAL" if saving_pct <= threshold_pct else "SWITCH"
+def agile_verdict_suppressed(result: AgileResult) -> bool:
+    if result.allow_partial:
+        return False
+    return not result.coverage.complete
 
 
 def _agile_version_line(versions) -> str:
@@ -349,7 +350,7 @@ def _agile_version_line(versions) -> str:
 def _agile_block(flex: SupplyCost, agile: SupplyCost) -> list[str]:
     return [
         "Electricity              Flexible      Agile",
-        f"  consumption          {agile.consumption_kwh} kWh",
+        f"  consumption          {flex.consumption_kwh} kWh   {agile.consumption_kwh} kWh",
         f"  energy (excl VAT)    £{flex.energy_pounds}   £{agile.energy_pounds}",
         f"  standing charge      £{flex.standing_pounds}   £{agile.standing_pounds}",
         f"  VAT (5%)             £{flex.vat_pounds}   £{agile.vat_pounds}",
@@ -375,16 +376,32 @@ def _agile_insight_lines(ins: AgileInsight) -> list[str]:
     ]
 
 
+def _agile_coverage_lines(result: AgileResult) -> list[str]:
+    c = result.coverage
+    lines = [f"Coverage:  daily {c.daily_days} days · half-hourly {c.hh_days} days "
+             f"(flex {c.daily_kwh} kWh vs agile {c.hh_kwh} kWh)"]
+    if c.missing_hh_days:
+        sample = ", ".join(f"{d:%Y-%m-%d}" for d in c.missing_hh_days[:5])
+        more = "" if len(c.missing_hh_days) <= 5 else f" (+{len(c.missing_hh_days) - 5} more)"
+        lines.append(f"  ⚠ half-hourly missing on {len(c.missing_hh_days)} day(s): {sample}{more}")
+    for note in c.notes:
+        lines.append(f"  ⚠ {note}")
+    return lines
+
+
 def _agile_reco_lines(result: AgileResult) -> list[str]:
-    if result.cheapest == "flexible":
-        return ["→ STAY on Flexible — cheapest over this period."]
+    if agile_verdict_suppressed(result):
+        return ["→ NO RECOMMENDATION — half-hourly data incomplete (see Coverage); "
+                "narrow the window with --from/--to or pass --allow-partial-data."]
+    v = recommend_agile(result)
     saving = result.flexible_total - result.agile_total
-    pct = _pct(saving, result.flexible_total)
-    if recommend_agile(result) == "MARGINAL":
-        return [f"→ Cheapest over this period: AGILE — £{result.agile_total}, but only "
-                f"{pct}% (£{saving}) under Flexible — MARGINAL, your call."]
-    return [f"→ Cheapest over this period: AGILE — £{result.agile_total}, {pct}% "
-            f"(£{saving}) less than Flexible."]
+    pct = _pct(abs(saving), result.flexible_total)
+    if v == Verdict.STAY:
+        return [f"→ STAY on Flexible — £{abs(saving)} ({pct}%) cheaper than Agile over this period."]
+    if v == Verdict.SWITCH:
+        return [f"→ SWITCH to Agile — £{saving} ({pct}%) cheaper than Flexible over this period."]
+    return [f"→ Flexible and Agile are effectively tied (within £{abs(saving)} / {pct}%) "
+            "— decide on how much load you can shift, not the number."]
 
 
 def _signed_p(v: Decimal) -> str:
@@ -447,18 +464,19 @@ def format_agile_text(result: AgileResult) -> str:
     ]
     lines += _agile_block(result.elec_flexible, result.elec_agile)
     lines.append("By month                 Flexible      Agile")
+    show_ticks = not agile_verdict_suppressed(result)
     for row in result.monthly:
         c = row.cheapest
         lines.append(
             f"  {_month_label(row.month, row.days):<20} "
-            f"{_cell(row.flexible_pounds, c == 'flexible'):<14}"
-            f"{_cell(row.agile_pounds, c == 'agile')}"
+            f"{_cell(row.flexible_pounds, show_ticks and c == 'flexible'):<14}"
+            f"{_cell(row.agile_pounds, show_ticks and c == 'agile')}"
         )
-    c = result.cheapest
+    v = recommend_agile(result)
     lines.append(
         f"  {'Total':<20} "
-        f"{_cell(result.flexible_total, c == 'flexible'):<14}"
-        f"{_cell(result.agile_total, c == 'agile')}"
+        f"{_cell(result.flexible_total, show_ticks and v == Verdict.STAY):<14}"
+        f"{_cell(result.agile_total, show_ticks and v == Verdict.SWITCH)}"
     )
     lines.append("")
     lines += _agile_insight_lines(result.insight)
@@ -471,6 +489,8 @@ def format_agile_text(result: AgileResult) -> str:
     )
     lines += _agile_hour_lines(result.breakdown)
     lines += _agile_reco_lines(result)
+    lines.append("")
+    lines += _agile_coverage_lines(result)
     lines.append("Figures are API-derived estimates incl. VAT, not your exact bill.")
     return "\n".join(lines)
 
@@ -494,8 +514,23 @@ def _half_hour_json(stat) -> dict:
     }
 
 
+def _agile_coverage_json(result: AgileResult) -> dict:
+    c = result.coverage
+    return {
+        "daily_days": c.daily_days,
+        "hh_days": c.hh_days,
+        "missing_hh_days": [str(d) for d in c.missing_hh_days],
+        "daily_kwh": str(c.daily_kwh),
+        "hh_kwh": str(c.hh_kwh),
+        "divergence_pct": str(c.divergence_pct),
+        "notes": c.notes,
+    }
+
+
 def format_agile_json(result: AgileResult) -> str:
     ins = result.insight
+    suppressed = agile_verdict_suppressed(result)
+    reco = None if suppressed else recommend_agile(result).value
     return json.dumps(
         {
             "period_from": str(result.period_from),
@@ -519,7 +554,6 @@ def format_agile_json(result: AgileResult) -> str:
             ],
             "flexible_total": str(result.flexible_total),
             "agile_total": str(result.agile_total),
-            "cheapest": result.cheapest,
             "insight": {
                 "agile_effective_p": str(ins.agile_effective_p),
                 "flex_effective_p": str(ins.flex_effective_p),
@@ -555,7 +589,9 @@ def format_agile_json(result: AgileResult) -> str:
                 "cheapest6_usage_pct": str(result.breakdown.cheapest6_usage_pct),
                 "dearest6_usage_pct": str(result.breakdown.dearest6_usage_pct),
             },
-            "recommendation": recommend_agile(result),
+            "recommendation": reco,
+            "verdict_suppressed": suppressed,
+            "coverage": _agile_coverage_json(result),
         },
         indent=2,
     )

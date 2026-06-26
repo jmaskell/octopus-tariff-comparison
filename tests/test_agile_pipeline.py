@@ -75,11 +75,13 @@ def test_run_agile_comparison_basic():
     assert result.agile_versions[0].product_code == "AGILE-24-10-01"
     # Agile (avg 14p/kWh) cheaper than Flexible (24p/kWh) on equal usage.
     assert result.agile_total < result.flexible_total
-    assert result.cheapest == "agile"
     assert result.elec_agile.consumption_kwh == Decimal("2.0")
     # insight populated
     assert result.insight.negative_count == 1
     assert result.insight.priciest.rate_p == Decimal("30.0")
+    # coverage populated and complete (daily and hh cover the same day)
+    assert result.coverage.complete
+    assert result.elec_flexible.consumption_kwh == result.elec_agile.consumption_kwh
 
 
 def test_run_agile_flexible_baseline_matches_daily_engine():

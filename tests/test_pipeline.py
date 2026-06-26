@@ -59,18 +59,23 @@ def test_run_comparison_has_three_tariffs():
     assert result.fixed.product_code == "OE-FIX-12M-26-06-24"
     # three independent totals; Tracker cheapest, Fixed between Tracker and Flexible
     assert result.tracker_total < result.fixed_total < result.flexible_total
-    assert result.cheapest == "tracker"
-    # monthly fixed totals sum to the grand fixed total
-    assert sum(r.fixed_pounds for r in result.monthly) == result.fixed_total
+    # tracker_versions list is populated
+    assert len(result.tracker_versions) >= 1
+    assert result.tracker_versions[0].product_code == "SILVER-24-12-31"
     # per-supply fixed totals sum to the grand fixed total
     assert result.elec_fixed.total_pounds + result.gas_fixed.total_pounds == result.fixed_total
     assert [r.month for r in result.monthly] == [date(2026, 3, 1), date(2026, 4, 1)]
+    # coverage and gas_units are populated
+    assert result.coverage.complete is True
+    assert result.gas_units.resolved == "kwh"
 
 
 def test_run_comparison_text_renders_fixed():
     text = format_text(run_comparison(FakeClient(), _config()))
     assert "OE-FIX-12M-26-06-24" in text
-    assert "Fixed" in text and "✓" in text
+    # Fixed info appears in the FORWARD LOCK-IN CHECK section
+    assert "FORWARD LOCK-IN CHECK" in text
+    assert "12M Fixed" in text
     assert "Mar 2026" in text and "Apr 2026" in text
 
 

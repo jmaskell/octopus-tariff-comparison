@@ -2,78 +2,157 @@ import json
 from datetime import date
 from decimal import Decimal
 
+from octopus_compare.coverage import Coverage, SupplyCoverage
+from octopus_compare.consumption import GasUnitInfo
 from octopus_compare.costing import SupplyCost
-from octopus_compare.tracker import TrackerVersion, FixedProduct
 from octopus_compare.report import (
-    ComparisonResult, MonthlyRow, recommend, format_text, format_json)
+    ComparisonResult, MonthlyRow, recommend, fixed_verdict,
+    verdict_suppressed, format_text, format_json,
+)
+from octopus_compare.tracker import TrackerVersion, FixedProduct
+from octopus_compare.verdict import Verdict
 
 
-def _cost(total):
-    t = Decimal(total)
-    return SupplyCost(Decimal("800"), t, Decimal("0"), t, Decimal("0"), t)
+def _sc(total, energy="0", standing="0", vat="0", kwh="0"):
+    return SupplyCost(
+        consumption_kwh=Decimal(kwh), energy_pounds=Decimal(energy),
+        standing_pounds=Decimal(standing), subtotal_pounds=Decimal("0"),
+        vat_pounds=Decimal(vat), total_pounds=Decimal(total))
 
 
-def _result(flex, trk, fix):
+def _complete_coverage():
+    return Coverage([SupplyCoverage("electricity", 90, 90, []),
+                     SupplyCoverage("gas", 90, 90, [])], [])
+
+
+def _result(flex_total, trk_total, fix_total, coverage=None, gas_units=None,
+            allow_partial=False):
+    tv = TrackerVersion("SILVER-26-01-01", "Tracker Jan", date(2026, 1, 1), None)
+    fp = FixedProduct("OE-FIX-12M-26-06-24", "12M Fixed", date(2026, 6, 24))
     return ComparisonResult(
-        period_from=date(2026, 1, 1), period_to=date(2026, 5, 31),
-        region="C",
-        tracker=TrackerVersion("SILVER-26-04-01", "Octopus Tracker April 2026 v1",
-                               date(2026, 4, 1), None),
-        fixed=FixedProduct("OE-FIX-12M-26-06-24", "Octopus 12M Fixed June 2026 v5",
-                           date(2026, 6, 24)),
-        elec_flexible=_cost(flex), elec_tracker=_cost(trk), elec_fixed=_cost(fix),
-        gas_flexible=_cost("0"), gas_tracker=_cost("0"), gas_fixed=_cost("0"),
-        monthly=[
-            MonthlyRow(date(2026, 1, 1), 31, Decimal("210.40"), Decimal("194.00"), Decimal("205.10")),
-            MonthlyRow(date(2026, 4, 1), 30, Decimal("158.40"), Decimal("135.10"), Decimal("152.30")),
-        ],
-    )
+        period_from=date(2026, 1, 1), period_to=date(2026, 4, 1), region="C",
+        tracker=tv, tracker_versions=[tv], fixed=fp,
+        elec_flexible=_sc(flex_total), elec_tracker=_sc(trk_total),
+        elec_fixed=_sc(fix_total),
+        gas_flexible=_sc("0"), gas_tracker=_sc("0"), gas_fixed=_sc("0"),
+        monthly=[], coverage=coverage or _complete_coverage(),
+        gas_units=gas_units or GasUnitInfo("m3", "m3", True, Decimal("11.36")),
+        allow_partial=allow_partial)
 
 
-def test_totals_and_cheapest():
-    r = _result("877.39", "783.83", "855.10")
-    assert r.flexible_total == Decimal("877.39")
-    assert r.tracker_total == Decimal("783.83")
-    assert r.fixed_total == Decimal("855.10")
-    assert r.cheapest == "tracker"
+def test_recommend_is_flexible_vs_tracker_only():
+    # Tracker far cheaper than Flexible, Fixed irrelevant to the backtest verdict
+    assert recommend(_result("1000", "900", "500")) == Verdict.SWITCH
+    assert recommend(_result("900", "1000", "500")) == Verdict.STAY
+    assert recommend(_result("812", "820", "100")) == Verdict.TOO_CLOSE
 
 
-def test_monthly_row_cheapest_and_tiebreak():
-    row = MonthlyRow(date(2026, 1, 1), 31, Decimal("194.00"), Decimal("194.00"), Decimal("205.10"))
-    assert row.cheapest == "flexible"  # tie flexible vs tracker -> flexible wins
-    row2 = MonthlyRow(date(2026, 1, 1), 31, Decimal("210.40"), Decimal("194.00"), Decimal("205.10"))
-    assert row2.cheapest == "tracker"
+def test_fixed_verdict_is_fixed_vs_flexible():
+    assert fixed_verdict(_result("1000", "999", "900")) == Verdict.SWITCH
 
 
-def test_recommend_variants():
-    assert recommend(_result("877.39", "783.83", "855.10")) == "SWITCH"   # tracker 10.7% < flex
-    assert recommend(_result("783.83", "877.39", "855.10")) == "STAY"     # flexible cheapest
-    assert recommend(_result("100.00", "99.00", "101.00")) == "MARGINAL"  # tracker only 1% under
+def test_verdict_suppressed_on_incomplete_coverage():
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    assert verdict_suppressed(_result("1000", "900", "800", coverage=cov)) is True
 
 
-def test_format_text_three_columns_and_marker():
-    text = format_text(_result("877.39", "783.83", "855.10"))
-    assert "Flexible" in text and "Tracker" in text and "Fixed" in text
-    assert "SILVER-26-04-01" in text
-    assert "OE-FIX-12M-26-06-24" in text
-    assert "12M Fixed" in text
-    assert "Region C" in text
-    assert "✓" in text
-    assert "Jan 2026" in text and "Apr 2026" in text
-    assert "Cheapest over this period: TRACKER" in text
+def test_verdict_suppressed_on_ambiguous_gas():
+    gi = GasUnitInfo("auto", "m3", False, Decimal("11.36"))
+    assert verdict_suppressed(_result("1000", "900", "800", gas_units=gi)) is True
 
 
-def test_format_json_structure():
-    data = json.loads(format_json(_result("877.39", "783.83", "855.10")))
-    assert data["region"] == "C"
-    assert data["tracker"]["product_code"] == "SILVER-26-04-01"
-    assert data["fixed"]["product_code"] == "OE-FIX-12M-26-06-24"
-    assert data["flexible_total"] == "877.39"
-    assert data["tracker_total"] == "783.83"
-    assert data["fixed_total"] == "855.10"
-    assert data["cheapest"] == "tracker"
-    assert data["recommendation"] == "SWITCH"
-    assert data["electricity"]["fixed"]["total"] == "855.10"
-    assert len(data["monthly"]) == 2
-    assert data["monthly"][0]["fixed"] == "205.10"
-    assert data["monthly"][0]["cheapest"] == "tracker"
+def test_allow_partial_unsuppresses():
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    assert verdict_suppressed(
+        _result("1000", "900", "800", coverage=cov, allow_partial=True)) is False
+
+
+def test_format_text_has_two_sections_and_no_recommendation_banner():
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    out = format_text(_result("1000", "900", "800", coverage=cov))
+    assert "HISTORICAL BACKTEST" in out
+    assert "FORWARD LOCK-IN CHECK" in out
+    assert "NO RECOMMENDATION" in out
+    assert "Coverage:" in out
+    assert "Gas units:" in out
+
+
+def test_format_text_shows_backtest_verdict_when_clean():
+    out = format_text(_result("1000", "900", "1100"))
+    assert "SWITCH" in out
+    assert "NO RECOMMENDATION" not in out
+
+
+def test_monthly_row_verdict_too_close_has_no_tick():
+    out = format_text(ComparisonResultWithMonth())
+    # the close month (£100.00 vs £100.40) must not be ticked
+    assert "✓" not in out.split("By month")[1].split("Total")[0]
+
+
+def ComparisonResultWithMonth():
+    base = _result("100.40", "100.00", "200")
+    base.monthly = [MonthlyRow(date(2026, 1, 1), 31,
+                               Decimal("100.40"), Decimal("100.00"))]
+    return base
+
+
+def test_format_text_suppressed_shows_no_ticks_even_with_clear_month():
+    # Clear SWITCH margin per row/total, but incomplete coverage suppresses ticks.
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    base = _result("1000", "900", "800", coverage=cov)
+    base.monthly = [MonthlyRow(date(2026, 1, 1), 31,
+                               Decimal("1000"), Decimal("900"))]
+    out = format_text(base)
+    assert "NO RECOMMENDATION" in out
+    # No ✓ anywhere in the backtest table (monthly rows + Total row).
+    backtest_table = out.split("By month")[1].split("HISTORICAL")[0]
+    assert "✓" not in backtest_table
+
+
+def test_format_json_clean_case():
+    data = json.loads(format_json(_result("1000", "900", "1100")))
+    assert data["backtest"]["recommendation"] == Verdict.SWITCH.value
+    assert data["forward_lock_in"]["fixed_total"] == "1100"
+    assert data["forward_lock_in"]["verdict"] == fixed_verdict(
+        _result("1000", "900", "1100")).value
+    assert data["coverage"]["complete"] is True
+    assert data["gas_units"]["resolved"] == "m3"
+    assert data["verdict_suppressed"] is False
+
+
+def test_format_json_suppressed_case():
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    data = json.loads(format_json(_result("1000", "900", "800", coverage=cov)))
+    assert data["verdict_suppressed"] is True
+    assert data["backtest"]["recommendation"] is None
+    assert data["forward_lock_in"]["verdict"] is None
+    # Numeric fields are still present.
+    assert data["forward_lock_in"]["fixed_total"] == "800"
+    assert data["flexible_total"] == "1000"
+    assert data["tracker_total"] == "900"
+    assert data["coverage"]["complete"] is False
+
+
+def test_format_json_monthly_verdict_suppressed_when_incomplete():
+    """Monthly verdicts must be None in JSON when coverage is incomplete."""
+    cov = Coverage([SupplyCoverage("electricity", 90, 90, []),
+                    SupplyCoverage("gas", 60, 90, [date(2026, 2, 1)])], [])
+    base = _result("1000", "900", "800", coverage=cov)
+    base.monthly = [MonthlyRow(date(2026, 1, 1), 31, Decimal("1000"), Decimal("900"))]
+    data = json.loads(format_json(base))
+    assert data["verdict_suppressed"] is True
+    assert data["monthly"][0]["verdict"] is None
+
+
+def test_format_json_monthly_verdict_present_when_clean():
+    """Monthly verdicts must be the row verdict value in JSON when coverage is complete."""
+    base = _result("1000", "900", "1100")
+    base.monthly = [MonthlyRow(date(2026, 1, 1), 31, Decimal("1000"), Decimal("900"))]
+    data = json.loads(format_json(base))
+    assert data["verdict_suppressed"] is False
+    assert data["monthly"][0]["verdict"] == Verdict.SWITCH.value

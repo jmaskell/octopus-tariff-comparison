@@ -9,6 +9,7 @@ from octopus_compare.agile_breakdown import compute_breakdown
 from octopus_compare.agile_insight import compute_insight
 from octopus_compare.config import Config
 from octopus_compare.consumption import fetch_daily, fetch_halfhourly
+from octopus_compare.coverage import agile_coverage
 from octopus_compare.costing import supply_cost, month_slices, sum_supply_costs
 from octopus_compare.pipeline import PricingError
 from octopus_compare.rates import fetch_rates, fetch_standing_charges
@@ -92,11 +93,19 @@ def run_agile_comparison(client, config: Config) -> AgileResult:
     insight = compute_insight(hh, agile_rate_for, flex_rate_for, config.peak_window)
     breakdown = compute_breakdown(
         hh, agile_rate_map, insight.flex_effective_p, insight.agile_effective_p,
-        elec_agile.consumption_kwh, config.period_from, config.period_to)
+        elec_agile.consumption_kwh, config.period_from, config.period_to,
+        energy_delta_pounds=elec_flex.energy_pounds - elec_agile.energy_pounds)
+
+    daily_days = set(daily)
+    hh_local_days = {i.astimezone(_LONDON).date() for i in hh}
+    daily_kwh = sum((Decimal(v) for v in daily.values()), Decimal(0))
+    coverage = agile_coverage(daily_days, hh_local_days, daily_kwh,
+                              elec_agile.consumption_kwh)
 
     return AgileResult(
         period_from=config.period_from, period_to=config.period_to, region=region,
         agile_versions=versions,
         elec_flexible=elec_flex, elec_agile=elec_agile,
         monthly=monthly, insight=insight, breakdown=breakdown,
+        coverage=coverage, allow_partial=config.allow_partial_data,
     )

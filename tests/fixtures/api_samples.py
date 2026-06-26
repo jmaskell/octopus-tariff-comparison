@@ -78,6 +78,21 @@ ELEC_CONSUMPTION_KWH = {
     ]
 }
 
+# Half-hourly electricity consumption (kWh per half hour). Includes a peak slot
+# (16:00 London) and a DST-boundary day.
+HH_CONSUMPTION = {
+    "results": [
+        {"consumption": 0.20, "interval_start": "2026-03-01T00:00:00Z",
+         "interval_end": "2026-03-01T00:30:00Z"},
+        {"consumption": 0.30, "interval_start": "2026-03-01T00:30:00Z",
+         "interval_end": "2026-03-01T01:00:00Z"},
+        {"consumption": 0.90, "interval_start": "2026-03-01T16:00:00Z",
+         "interval_end": "2026-03-01T16:30:00Z"},
+        {"consumption": 0.10, "interval_start": "2026-03-01T17:00:00Z",
+         "interval_end": "2026-03-01T17:30:00Z"},
+    ]
+}
+
 # Tracker product details, forming a chain via available_to -> next available_from.
 TRACKER_PRODUCTS = {
     "SILVER-25-04-15": {

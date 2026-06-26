@@ -48,3 +48,13 @@ def test_tracker_product_and_region_flags():
         ["--tracker-product", "SILVER-26-04-01", "--region", "C"], ENV, TODAY)
     assert cfg.tracker_product == "SILVER-26-04-01"
     assert cfg.region == "C"
+
+
+def test_fixed_product_default_none():
+    cfg = load_config([], ENV, TODAY)
+    assert cfg.fixed_product is None
+
+
+def test_fixed_product_flag():
+    cfg = load_config(["--fixed-product", "OE-FIX-12M-26-06-24"], ENV, TODAY)
+    assert cfg.fixed_product == "OE-FIX-12M-26-06-24"

@@ -101,3 +101,35 @@ def test_agile_resolvers_single_version():
     assert rate_for(datetime(2026, 3, 1, 16, 0, tzinfo=_UTC)) == Decimal("21.0")
     assert rate_for(datetime(2026, 3, 1, 13, 30, tzinfo=_UTC)) == Decimal("-2.0")
     assert sc_for(date(2026, 3, 1)) == Decimal("45.0")
+
+
+def test_agile_resolvers_merges_versions():
+    """Two versions: their half-hourly rates merge into one instant-keyed
+    lookup, and the daily standing charge is selected per version by date."""
+    v1 = AgileVersion("AGILE-23-12-06", "Agile Dec 2023",
+                      date(2023, 12, 6), date(2024, 10, 1))
+    v2 = AgileVersion("AGILE-24-10-01", "Agile Oct 2024",
+                      date(2024, 10, 1), None)
+
+    class TwoVersionClient:
+        def get_results(self, path, params=None):
+            if "standing-charges" in path:
+                value = 30.0 if "AGILE-23-12-06" in path else 45.0
+                return [{"value_exc_vat": value, "valid_from": None, "valid_to": None}]
+            # standard-unit-rates: each version serves a rate at a distinct instant
+            if "AGILE-23-12-06" in path:
+                return [{"value_exc_vat": 12.0,
+                         "valid_from": "2024-01-15T00:00:00Z",
+                         "valid_to": "2024-01-15T00:30:00Z"}]
+            return [{"value_exc_vat": 25.0,
+                     "valid_from": "2024-11-15T00:00:00Z",
+                     "valid_to": "2024-11-15T00:30:00Z"}]
+
+    rate_for, sc_for = agile_resolvers(
+        TwoVersionClient(), [v1, v2], "C", date(2024, 1, 1), date(2024, 12, 1))
+    # rates from BOTH versions are present in the merged lookup
+    assert rate_for(datetime(2024, 1, 15, 0, 0, tzinfo=_UTC)) == Decimal("12.0")
+    assert rate_for(datetime(2024, 11, 15, 0, 0, tzinfo=_UTC)) == Decimal("25.0")
+    # standing charge selected per version by date
+    assert sc_for(date(2024, 1, 15)) == Decimal("30.0")
+    assert sc_for(date(2024, 11, 15)) == Decimal("45.0")

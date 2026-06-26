@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 
 import pytest
@@ -37,3 +37,27 @@ def test_actual_totals_match_bills(period_from, period_to,
     # Actual (Flexible) side should reproduce the bill within a few pence.
     assert abs(result.elec_actual.total_pounds - expected_elec_total) <= Decimal("0.50")
     assert abs(result.gas_actual.total_pounds - expected_gas_total) <= Decimal("1.00")
+
+
+def test_live_agile_smoke():
+    from datetime import timedelta
+    from dotenv import dotenv_values
+    from octopus_compare.agile_pipeline import run_agile_comparison
+    from octopus_compare.client import OctopusClient
+    from octopus_compare.config import Config
+
+    env = {**dotenv_values(".env"), **os.environ}
+    period_to = date(2026, 6, 1)
+    period_from = period_to - timedelta(days=30)
+    cfg = Config(
+        api_key=env["OCTOPUS_API_KEY"], account=env["OCTOPUS_ACCOUNT"],
+        period_from=period_from, period_to=period_to,
+        output_format="text", gas_calorific_value=Decimal("39.5"),
+        gas_units="auto", verbose=True, command="agile",
+        peak_window=(time(16, 0), time(19, 0)),
+    )
+    result = run_agile_comparison(OctopusClient(cfg.api_key), cfg)
+    assert result.elec_agile.consumption_kwh > 0
+    assert result.elec_agile.total_pounds > 0
+    assert result.agile_versions
+    assert result.insight.cheapest.rate_p <= result.insight.priciest.rate_p

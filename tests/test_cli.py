@@ -61,3 +61,23 @@ def test_main_verbose_prints_diagnostics(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert code == 0
     assert "period 2026-04-01 to 2026-04-30" in captured.err
+
+
+def test_main_routes_to_agile(monkeypatch, capsys):
+    import octopus_compare.cli as cli
+
+    class FakeResult:
+        pass
+
+    monkeypatch.setattr(cli, "_load_env",
+                        lambda: {"OCTOPUS_API_KEY": "sk", "OCTOPUS_ACCOUNT": "A-1"})
+    monkeypatch.setattr(cli, "_build_client", lambda cfg: object())
+    called = {}
+    monkeypatch.setattr(cli, "run_agile_comparison",
+                        lambda client, cfg: called.setdefault("agile", True) or FakeResult())
+    monkeypatch.setattr(cli, "format_agile_text", lambda result: "AGILE-OUTPUT")
+
+    rc = cli.main(["agile"])
+    assert rc == 0
+    assert called.get("agile") is True
+    assert "AGILE-OUTPUT" in capsys.readouterr().out

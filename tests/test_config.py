@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 
 import pytest
@@ -58,3 +58,37 @@ def test_fixed_product_default_none():
 def test_fixed_product_flag():
     cfg = load_config(["--fixed-product", "OE-FIX-12M-26-06-24"], ENV, TODAY)
     assert cfg.fixed_product == "OE-FIX-12M-26-06-24"
+
+
+def test_no_subcommand_defaults_to_compare():
+    cfg = load_config([], ENV, TODAY)
+    assert cfg.command == "compare"
+    assert cfg.agile_product is None
+    assert cfg.peak_window == (time(16, 0), time(19, 0))
+
+
+def test_agile_subcommand():
+    cfg = load_config(["agile"], ENV, TODAY)
+    assert cfg.command == "agile"
+
+
+def test_agile_subcommand_shares_common_flags():
+    cfg = load_config(["agile", "--from", "2026-01-01", "--to", "2026-05-31"],
+                      ENV, TODAY)
+    assert cfg.command == "agile"
+    assert cfg.period_from == date(2026, 1, 1)
+    assert cfg.period_to == date(2026, 5, 31)
+
+
+def test_agile_product_and_peak_window_flags():
+    cfg = load_config(
+        ["agile", "--agile-product", "AGILE-24-10-01", "--peak-window", "17:00-20:00"],
+        ENV, TODAY)
+    assert cfg.agile_product == "AGILE-24-10-01"
+    assert cfg.peak_window == (time(17, 0), time(20, 0))
+
+
+def test_compare_flags_still_work_without_subcommand():
+    cfg = load_config(["--tracker-product", "SILVER-26-04-01"], ENV, TODAY)
+    assert cfg.command == "compare"
+    assert cfg.tracker_product == "SILVER-26-04-01"

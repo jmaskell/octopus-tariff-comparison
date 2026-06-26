@@ -1,8 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
-from octopus_compare.consumption import fetch_daily, to_kwh
-from tests.fixtures.api_samples import ELEC_CONSUMPTION_KWH
+from octopus_compare.consumption import fetch_daily, fetch_halfhourly, to_kwh
+from tests.fixtures.api_samples import ELEC_CONSUMPTION_KWH, HH_CONSUMPTION
+
+_UTC = ZoneInfo("UTC")
 
 
 class FakeClient:
@@ -64,3 +67,27 @@ def test_gas_explicit_kwh_passthrough():
 def test_electricity_passthrough():
     raw = {date(2026, 3, 1): Decimal("9.09")}
     assert to_kwh(raw, "electricity", "auto", Decimal("39.5")) == raw
+
+
+def test_fetch_halfhourly_keys_by_utc_instant():
+    client = FakeClient(HH_CONSUMPTION["results"])
+    half = fetch_halfhourly(client, "1200033187430", ["19L3474725"],
+                            date(2026, 3, 1), date(2026, 3, 2))
+    assert half[datetime(2026, 3, 1, 0, 0, tzinfo=_UTC)] == Decimal("0.20")
+    assert half[datetime(2026, 3, 1, 16, 0, tzinfo=_UTC)] == Decimal("0.90")
+    assert len(half) == 4
+    assert client.paths == [
+        "electricity-meter-points/1200033187430/meters/19L3474725/consumption/"]
+
+
+def test_fetch_halfhourly_sums_across_meters():
+    rows = HH_CONSUMPTION["results"]
+
+    class MultiMeterClient:
+        def get_results(self, path, params=None):
+            serial = path.split("/meters/")[1].split("/")[0]
+            return rows if serial == "NEW" else []
+
+    half = fetch_halfhourly(MultiMeterClient(), "1200033187430", ["OLD", "NEW"],
+                            date(2026, 3, 1), date(2026, 3, 2))
+    assert half[datetime(2026, 3, 1, 0, 0, tzinfo=_UTC)] == Decimal("0.20")

@@ -22,6 +22,16 @@ Get your API key: https://octopus.energy/dashboard/new/accounts/personal-details
     octopus-compare --region C            # override the auto-derived region
     octopus-compare --format json
 
+    octopus-compare agile                 # Flexible vs Agile (electricity only), half-hourly backtest
+    octopus-compare agile --from 2026-01-01 --to 2026-05-31
+    octopus-compare agile --agile-product AGILE-24-10-01   # pin a specific Agile version
+    octopus-compare agile --peak-window 17:00-20:00        # redefine the peak band (default 16:00-19:00)
+
+The `agile` subcommand costs your real half-hourly electricity usage against Agile's published
+half-hourly rates for the same dates (a pure what-if backtest), reports Flexible-vs-Agile totals
+and a monthly table, and a time-of-use insight block (effective p/kWh, peak share, cheapest/priciest
+half-hours, negative-price slots). Gas is excluded — Agile is electricity-only.
+
 ## Tests
 
     python -m pytest                      # offline unit + eval tests

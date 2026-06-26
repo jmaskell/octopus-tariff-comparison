@@ -6,8 +6,9 @@ from dotenv import dotenv_values
 
 from octopus_compare.client import OctopusClient, ApiError
 from octopus_compare.config import load_config, ConfigError
+from octopus_compare.agile_pipeline import run_agile_comparison
 from octopus_compare.pipeline import run_comparison, PricingError
-from octopus_compare.report import format_text, format_json
+from octopus_compare.report import format_text, format_json, format_agile_text, format_agile_json
 
 
 def _load_env() -> dict:
@@ -34,7 +35,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         client = _build_client(cfg)
-        result = run_comparison(client, cfg)
+        if cfg.command == "agile":
+            result = run_agile_comparison(client, cfg)
+        else:
+            result = run_comparison(client, cfg)
     except ApiError as e:
         print(f"Octopus API error: {e}", file=sys.stderr)
         return 3
@@ -49,7 +53,10 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    output = format_json(result) if cfg.output_format == "json" else format_text(result)
+    if cfg.command == "agile":
+        output = format_agile_json(result) if cfg.output_format == "json" else format_agile_text(result)
+    else:
+        output = format_json(result) if cfg.output_format == "json" else format_text(result)
     print(output)
     return 0
 

@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from octopus_compare.account import parse_account, region_letter, build_tariff_code
 from octopus_compare.agile import resolve_agile_versions, agile_resolvers
 from octopus_compare.agile_costing import agile_supply_cost
+from octopus_compare.agile_breakdown import compute_breakdown
 from octopus_compare.agile_insight import compute_insight
 from octopus_compare.config import Config
 from octopus_compare.consumption import fetch_daily, fetch_halfhourly
@@ -89,10 +90,13 @@ def run_agile_comparison(client, config: Config) -> AgileResult:
             agile_pounds=a_cost.total_pounds if a_cost else Decimal(0)))
 
     insight = compute_insight(hh, agile_rate_for, flex_rate_for, config.peak_window)
+    breakdown = compute_breakdown(
+        hh, agile_rate_map, insight.flex_effective_p, insight.agile_effective_p,
+        elec_agile.consumption_kwh, config.period_from, config.period_to)
 
     return AgileResult(
         period_from=config.period_from, period_to=config.period_to, region=region,
         agile_versions=versions,
         elec_flexible=elec_flex, elec_agile=elec_agile,
-        monthly=monthly, insight=insight,
+        monthly=monthly, insight=insight, breakdown=breakdown,
     )

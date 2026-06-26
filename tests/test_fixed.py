@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from octopus_compare.tracker import resolve_fixed, FixedProduct
+from octopus_compare.tracker import resolve_fixed, fixed_resolvers, FixedProduct
 
 FIXED_LIST = [
     {"code": "OE-FIX-12M-26-06-24", "full_name": "Octopus 12M Fixed June 2026 v5",
@@ -50,3 +50,21 @@ def test_resolve_fixed_none_found_raises():
     only_cosy = [r for r in FIXED_LIST if r["code"].startswith("COSY")]
     with pytest.raises(ValueError):
         resolve_fixed(ListClient(only_cosy))
+
+
+class FixedRateClient:
+    """Serves a single flat rate / standing charge regardless of period."""
+
+    def get_results(self, path, params=None):
+        if "standing-charges" in path:
+            return [{"value_exc_vat": 28.0, "valid_from": None, "valid_to": None}]
+        return [{"value_exc_vat": 21.5, "valid_from": None, "valid_to": None}]
+
+
+def test_fixed_resolvers_flat_across_dates():
+    fp = FixedProduct("OE-FIX-12M-26-06-24", "Octopus 12M Fixed", date(2026, 6, 24))
+    rate_for, sc_for = fixed_resolvers(FixedRateClient(), "electricity", fp, "C")
+    # Works for dates BEFORE the product's available_from — proves it's flat, not date-gated.
+    assert rate_for(date(2026, 1, 1)) == Decimal("21.5")
+    assert rate_for(date(2026, 5, 31)) == Decimal("21.5")
+    assert sc_for(date(2026, 1, 1)) == Decimal("28.0")

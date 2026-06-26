@@ -85,3 +85,10 @@ def test_compute_breakdown_integrates():
     assert len(b.by_hour) == 24
     assert b.decomposition.time_avg_p == Decimal("20.0")   # 99 excluded by the filter
     assert b.decomposition.structural_p + b.decomposition.behavioural_p == b.decomposition.total_p
+
+
+def test_pound_components_reconcile_exactly():
+    rates = {datetime(2026, 1, 1, h, tzinfo=UTC): Decimal("20") for h in range(5)}
+    d = compute_decomposition(rates, Decimal("25.3"), Decimal("18.7"),
+                              Decimal("1234.5"))
+    assert d.structural_pounds + d.behavioural_pounds == d.total_pounds

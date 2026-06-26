@@ -395,27 +395,31 @@ def _signed_pounds(v: Decimal) -> str:
     return f"-£{abs(v)}" if v < 0 else f"£{v}"
 
 
-def _agile_decomposition_lines(d) -> list[str]:
-    header = ("Why Agile is cheaper" if d.total_p > 0
-              else "Why Agile is more expensive" if d.total_p < 0
-              else "Flexible vs Agile — energy breakdown")
+def _agile_decomposition_lines(d, *, total_delta_pounds, standing_delta_pounds,
+                               vat_delta_pounds) -> list[str]:
+    header = ("Why Agile is cheaper" if total_delta_pounds > 0
+              else "Why Agile is more expensive" if total_delta_pounds < 0
+              else "Flexible vs Agile — no overall difference")
     struct = ("Agile cheaper on average" if d.structural_p > 0
               else "Agile dearer on average" if d.structural_p < 0
               else "Agile same on average")
     behav = ("you use at cheaper times" if d.behavioural_p > 0
              else "you use at dearer times" if d.behavioural_p < 0
              else "your timing is neutral")
-    net = ("Net saving" if d.total_p > 0
-           else "Net extra cost" if d.total_p < 0 else "Net: no difference")
+    energy_delta = d.total_pounds
     return [
-        f"{header} (energy only, excl VAT & standing)",
-        f"  Flexible flat rate                 {d.flex_p} p/kWh",
-        f"  Agile if you used power evenly     {d.time_avg_p} p/kWh   (time-average)",
-        f"  Agile on your actual usage         {d.load_p} p/kWh   (your load)",
-        "  ──────────────────────────────────────────────",
-        f"  Structural ({struct})  {_signed_p(d.structural_p)} p/kWh   {_signed_pounds(d.structural_pounds)}",
-        f"  Behavioural ({behav})  {_signed_p(d.behavioural_p)} p/kWh   {_signed_pounds(d.behavioural_pounds)}",
-        f"  {net}  {_signed_p(d.total_p)} p/kWh   {_signed_pounds(d.total_pounds)}",
+        f"{header} (driven by the total bill, incl. VAT & standing)",
+        "  Energy-only price pattern (excl VAT & standing):",
+        f"    Flexible flat rate                 {d.flex_p} p/kWh",
+        f"    Agile if you used power evenly     {d.time_avg_p} p/kWh   (time-average)",
+        f"    Agile on your actual usage         {d.load_p} p/kWh   (your load)",
+        "    ──────────────────────────────────────────────",
+        f"    Structural ({struct})  {_signed_p(d.structural_p)} p/kWh   {_signed_pounds(d.structural_pounds)}",
+        f"    Behavioural ({behav})  {_signed_p(d.behavioural_p)} p/kWh   {_signed_pounds(d.behavioural_pounds)}",
+        f"    Energy subtotal  {_signed_p(d.total_p)} p/kWh   {_signed_pounds(energy_delta)}",
+        "  Reconciliation to the bill (Flexible − Agile):",
+        f"    Energy {_signed_pounds(energy_delta)} + Standing {_signed_pounds(standing_delta_pounds)} "
+        f"+ VAT {_signed_pounds(vat_delta_pounds)} = Total {_signed_pounds(total_delta_pounds)}",
         "",
     ]
 
@@ -458,7 +462,13 @@ def format_agile_text(result: AgileResult) -> str:
     )
     lines.append("")
     lines += _agile_insight_lines(result.insight)
-    lines += _agile_decomposition_lines(result.breakdown.decomposition)
+    flex, agile = result.elec_flexible, result.elec_agile
+    lines += _agile_decomposition_lines(
+        result.breakdown.decomposition,
+        total_delta_pounds=flex.total_pounds - agile.total_pounds,
+        standing_delta_pounds=flex.standing_pounds - agile.standing_pounds,
+        vat_delta_pounds=flex.vat_pounds - agile.vat_pounds,
+    )
     lines += _agile_hour_lines(result.breakdown)
     lines += _agile_reco_lines(result)
     lines.append("Figures are API-derived estimates incl. VAT, not your exact bill.")

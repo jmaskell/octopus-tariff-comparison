@@ -58,12 +58,15 @@ def compute_decomposition(period_rates: dict[datetime, Decimal],
     structural = flex_effective_p - time_avg
     behavioural = time_avg - agile_effective_p
     total = flex_effective_p - agile_effective_p
+    total_pounds = pounds(total * total_kwh)
+    structural_pounds = pounds(structural * total_kwh)
+    behavioural_pounds = total_pounds - structural_pounds
     return Decomposition(
         flex_p=flex_effective_p, time_avg_p=time_avg, load_p=agile_effective_p,
         structural_p=structural, behavioural_p=behavioural, total_p=total,
-        structural_pounds=pounds(structural * total_kwh),
-        behavioural_pounds=pounds(behavioural * total_kwh),
-        total_pounds=pounds(total * total_kwh),
+        structural_pounds=structural_pounds,
+        behavioural_pounds=behavioural_pounds,
+        total_pounds=total_pounds,
         total_kwh=total_kwh,
     )
 

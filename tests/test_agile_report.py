@@ -9,7 +9,7 @@ from octopus_compare.agile_insight import AgileInsight, HalfHourStat
 from octopus_compare.costing import SupplyCost
 from octopus_compare.report import (
     AgileResult, AgileMonthlyRow, recommend_agile,
-    format_agile_text, format_agile_json)
+    format_agile_text, format_agile_json, _agile_decomposition_lines)
 
 _LONDON = ZoneInfo("Europe/London")
 
@@ -94,7 +94,7 @@ def test_format_agile_text_has_decomposition_cheaper():
     assert "Why Agile is cheaper" in text
     assert "Agile if you used power evenly" in text
     assert "Structural (Agile cheaper on average)" in text
-    assert "Net saving" in text
+    assert "Energy subtotal" in text
     assert "-£7.89" in text                 # minus before the £
     assert "Hour-of-day (London)" in text
     assert "Usage in 6 cheapest hours: 29.0%" in text
@@ -107,7 +107,7 @@ def test_format_agile_text_decomposition_inverse():
     assert "Why Agile is more expensive" in text
     assert "Agile dearer on average" in text
     assert "you use at dearer times" in text
-    assert "Net extra cost" in text
+    assert "Energy subtotal" in text
 
 
 def test_format_agile_json_has_breakdown():
@@ -117,3 +117,21 @@ def test_format_agile_json_has_breakdown():
     assert len(data["breakdown"]["by_hour"]) == 24
     assert data["breakdown"]["by_hour"][18]["marker"] == "dear"
     assert data["breakdown"]["cheapest6_usage_pct"] == "29.0"
+
+
+def _decomp(total_p):
+    return Decomposition(
+        flex_p=Decimal("25"), time_avg_p=Decimal("22"), load_p=Decimal("20"),
+        structural_p=Decimal("3"), behavioural_p=Decimal("2"), total_p=total_p,
+        structural_pounds=Decimal("30"), behavioural_pounds=Decimal("20"),
+        total_pounds=Decimal("50"), total_kwh=Decimal("1000"))
+
+
+def test_header_follows_total_bill_not_energy():
+    # energy favours Agile (total_p>0) but the bill total favours Flexible
+    lines = _agile_decomposition_lines(
+        _decomp(Decimal("5")), total_delta_pounds=Decimal("-2.50"),
+        standing_delta_pounds=Decimal("-7.40"), vat_delta_pounds=Decimal("-0.25"))
+    assert any("more expensive" in line for line in lines)
+    assert any("Energy-only price pattern" in line for line in lines)
+    assert any("=" in line and "Total" in line for line in lines)  # reconciliation

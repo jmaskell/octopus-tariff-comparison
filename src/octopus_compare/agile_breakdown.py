@@ -40,6 +40,14 @@ class Decomposition:
     total_kwh: Decimal
 
 
+@dataclass
+class AgileBreakdown:
+    decomposition: Decomposition
+    by_hour: list                 # list[HourBucket], 24 entries hour 0-23
+    cheapest6_usage_pct: Decimal
+    dearest6_usage_pct: Decimal
+
+
 def compute_decomposition(period_rates: dict[datetime, Decimal],
                           flex_effective_p: Decimal, agile_effective_p: Decimal,
                           total_kwh: Decimal) -> Decomposition:
@@ -86,3 +94,13 @@ def compute_hours(halfhourly_kwh: dict[datetime, Decimal],
     cheapest6 = sum((b.usage_pct for b in priced[:6]), Decimal(0))
     dearest6 = sum((b.usage_pct for b in priced[-6:]), Decimal(0))
     return buckets, cheapest6, dearest6
+
+
+def compute_breakdown(halfhourly_kwh: dict[datetime, Decimal],
+                      rate_map: dict[datetime, Decimal], flex_effective_p: Decimal,
+                      agile_effective_p: Decimal, total_kwh: Decimal,
+                      period_from: date, period_to: date) -> AgileBreakdown:
+    period_rates = _period_rates(rate_map, period_from, period_to)
+    decomp = compute_decomposition(period_rates, flex_effective_p, agile_effective_p, total_kwh)
+    by_hour, cheap6, dear6 = compute_hours(halfhourly_kwh, period_rates, total_kwh, decomp.time_avg_p)
+    return AgileBreakdown(decomp, by_hour, cheap6, dear6)

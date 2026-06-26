@@ -3,7 +3,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from octopus_compare.agile_breakdown import (
-    _period_rates, compute_decomposition, compute_hours, HourBucket)
+    _period_rates, compute_decomposition, compute_hours, HourBucket, compute_breakdown, AgileBreakdown)
 
 UTC = ZoneInfo("UTC")
 
@@ -71,3 +71,17 @@ def test_compute_hours_summary_shares():
     _b, cheap6, dear6 = compute_hours(hh, period_rates, Decimal("1"), Decimal("6.5"))
     assert dear6 == Decimal("100.0")     # hours 6..11 are the dearest 6; usage is in 11
     assert cheap6 == Decimal("0.0")      # hours 0..5 are the cheapest 6; no usage there
+
+
+def test_compute_breakdown_integrates():
+    rate_map = {
+        datetime(2026, 3, 1, 0, 0, tzinfo=UTC): Decimal("20"),
+        datetime(2026, 3, 2, 0, 0, tzinfo=UTC): Decimal("99"),  # +1 day, filtered out
+    }
+    hh = {datetime(2026, 3, 1, 0, 0, tzinfo=UTC): Decimal("1")}
+    b = compute_breakdown(hh, rate_map, Decimal("24.0"), Decimal("20.0"),
+                          Decimal("1"), date(2026, 3, 1), date(2026, 3, 1))
+    assert isinstance(b, AgileBreakdown)
+    assert len(b.by_hour) == 24
+    assert b.decomposition.time_avg_p == Decimal("20.0")   # 99 excluded by the filter
+    assert b.decomposition.structural_p + b.decomposition.behavioural_p == b.decomposition.total_p

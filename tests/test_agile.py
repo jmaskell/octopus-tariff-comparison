@@ -4,7 +4,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from octopus_compare.agile import build_halfhourly_lookup
+from octopus_compare.agile import build_halfhourly_lookup, resolve_agile_versions, AgileVersion, agile_resolvers
+from tests.fixtures.api_samples import AGILE_PRODUCTS_LIST
 
 _UTC = ZoneInfo("UTC")
 
@@ -34,10 +35,6 @@ def test_halfhourly_lookup_missing_raises():
     rates = build_halfhourly_lookup([])
     with pytest.raises(KeyError):
         rates.rate_for(datetime(2026, 3, 1, 0, 0, tzinfo=_UTC))
-
-
-from octopus_compare.agile import resolve_agile_versions, AgileVersion
-from tests.fixtures.api_samples import AGILE_PRODUCTS_LIST
 
 
 class AgileListClient:
@@ -80,3 +77,27 @@ def test_resolve_agile_versions_override():
 def test_resolve_agile_versions_none_raises():
     with pytest.raises(ValueError):
         resolve_agile_versions(AgileListClient(), date(2020, 1, 1), date(2020, 2, 1))
+
+
+class AgileRateClient:
+    """Serves half-hourly Agile rates and a flat standing charge."""
+
+    def get_results(self, path, params=None):
+        if "standing-charges" in path:
+            return [{"value_exc_vat": 45.0, "valid_from": None, "valid_to": None}]
+        # standard-unit-rates: two aligned half-hours for 2026-03-01.
+        return [
+            {"value_exc_vat": 21.0, "valid_from": "2026-03-01T16:00:00Z",
+             "valid_to": "2026-03-01T16:30:00Z"},
+            {"value_exc_vat": -2.0, "valid_from": "2026-03-01T13:30:00Z",
+             "valid_to": "2026-03-01T14:00:00Z"},
+        ]
+
+
+def test_agile_resolvers_single_version():
+    v = AgileVersion("AGILE-24-10-01", "Agile Octopus", date(2024, 10, 1), None)
+    rate_for, sc_for = agile_resolvers(
+        AgileRateClient(), [v], "C", date(2026, 3, 1), date(2026, 3, 2))
+    assert rate_for(datetime(2026, 3, 1, 16, 0, tzinfo=_UTC)) == Decimal("21.0")
+    assert rate_for(datetime(2026, 3, 1, 13, 30, tzinfo=_UTC)) == Decimal("-2.0")
+    assert sc_for(date(2026, 3, 1)) == Decimal("45.0")

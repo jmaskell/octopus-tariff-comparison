@@ -3,6 +3,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from octopus_compare.account import build_tariff_code
+from octopus_compare.rates import fetch_standing_charges, VersionedLookup
+
 _UTC = ZoneInfo("UTC")
 
 
@@ -78,3 +81,33 @@ def resolve_agile_versions(client, period_from, period_to, override=None):
     if not in_window:
         raise ValueError("No Octopus Agile product covering this window was found")
     return sorted(in_window, key=lambda v: v.available_from)
+
+
+def _iso(d: date) -> str:
+    return d.strftime("%Y-%m-%dT00:00:00Z")
+
+
+def agile_resolvers(client, versions, region, period_from, period_to):
+    """(rate_for, sc_for) for the Agile column. Half-hourly unit rates from every
+    version are merged into one instant-keyed lookup (version windows never
+    overlap). Standing charges are daily and version-selected via VersionedLookup,
+    mirroring tracker_resolvers."""
+    by_instant: dict[datetime, Decimal] = {}
+    sc_entries = []
+    single = len(versions) == 1
+    for v in versions:
+        tariff = build_tariff_code("electricity", v.product_code, region)
+        rate_results = client.get_results(
+            f"products/{v.product_code}/electricity-tariffs/{tariff}/standard-unit-rates/",
+            {"period_from": _iso(period_from), "period_to": _iso(period_to),
+             "page_size": 25000},
+        )
+        for r in rate_results:
+            by_instant[_utc_instant(r["valid_from"])] = Decimal(str(r["value_exc_vat"]))
+        v_from, v_to = (date.min, None) if single else (v.available_from, v.available_to)
+        sc_entries.append((
+            v_from, v_to,
+            fetch_standing_charges(client, "electricity", v.product_code, tariff,
+                                   period_from, period_to),
+        ))
+    return HalfHourlyRates(by_instant).rate_for, VersionedLookup(sc_entries).rate_for
